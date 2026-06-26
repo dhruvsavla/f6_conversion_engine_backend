@@ -11,18 +11,15 @@ def build_audit(result: MappingResult) -> Dict[str, Any]:
         "removed": 0, "modified": 0, "missing": 0,
     }
 
-    for seg_name in result.segment_order:
-        seg = result.segments.get(seg_name)
-        if seg is None:
-            continue
-
+    for seg in result.segments:
         for f in seg.in_place + seg.added + seg.removed:
             ct = f.change_type
             if ct in summary:
                 summary[ct] += 1
 
             entries.append({
-                "segment": seg_name,
+                "segment": seg.name,
+                "occurrence": seg.occurrence,
                 "from_field_id": "" if ct == "added" else f.field_id,
                 "to_field_id": "" if ct == "removed" else f.field_id,
                 "field_name": f.field_name,
@@ -31,6 +28,9 @@ def build_audit(result: MappingResult) -> Dict[str, Any]:
                 "new_value": f.new_value,
                 "rule_applied": f.rule_applied,
                 "notes": f.notes,
+                "condition_evaluated": f.condition_evaluated,
+                "condition_result": f.condition_result,
+                "condition_expression": f.condition_expression,
             })
 
     findings = result.findings

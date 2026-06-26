@@ -34,7 +34,10 @@ def detect(parsed: ParsedTransaction, ruleset: RuleSet) -> str:
 
 
 def _fmap(parsed: ParsedTransaction, seg: str) -> Dict[str, str]:
-    return {f.field_id: f.value for f in parsed.segments.get(seg, [])}
+    s = parsed.get_first(seg)
+    if s is None:
+        return {}
+    return {f.field_id: f.value for f in s.fields}
 
 
 def _matches(
@@ -72,23 +75,22 @@ def _matches(
 
     if "segment_present" in detection:
         for seg in detection["segment_present"]:
-            if seg not in parsed.segments:
+            if parsed.get_first(seg) is None:
                 return False
 
     if "segment_not_present" in detection:
         for seg in detection["segment_not_present"]:
-            if seg in parsed.segments:
+            if parsed.get_first(seg) is not None:
                 return False
 
-    # Check that a specific field_id is present in a segment
     if "field_present" in detection:
         for seg_name, field_ids in detection["field_present"].items():
-            seg_field_ids = {f.field_id for f in parsed.segments.get(seg_name, [])}
+            s = parsed.get_first(seg_name)
+            seg_field_ids = {f.field_id for f in s.fields} if s else set()
             ids = field_ids if isinstance(field_ids, list) else [field_ids]
             if not any(fid in seg_field_ids for fid in ids):
                 return False
 
-    # Check submission clarification codes
     if "submission_clarification_code" in detection:
         clm = _fmap(parsed, "CLM")
         code = clm.get("420-DK", "").strip()

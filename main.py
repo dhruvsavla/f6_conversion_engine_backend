@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -159,6 +159,49 @@ async def convert(req: ConvertRequest):
     steps = []
     result = None
     async for event in orchestrator.convert_stream(req.d0_text):
+        if event["type"] == "step":
+            steps.append(event["data"])
+        elif event["type"] == "result":
+            result = event["data"]
+        elif event["type"] == "error":
+            raise HTTPException(500, event["data"]["message"])
+
+    if result is None:
+        raise HTTPException(500, "Conversion produced no result.")
+
+    return {**result, "agent_steps": steps}
+
+
+@app.post("/api/convert/hex/stream")
+async def convert_hex_stream(request: Request):
+    """SSE endpoint for binary NCPDP hex files (application/octet-stream)."""
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "Request body must not be empty.")
+    text = body.decode("latin-1")  # NCPDP is 8-bit; latin-1 preserves all byte values
+
+    async def generate():
+        async for event in orchestrator.convert_stream(text):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/convert/hex")
+async def convert_hex(request: Request):
+    """Non-streaming: binary NCPDP hex file → full JSON result."""
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "Request body must not be empty.")
+    text = body.decode("latin-1")
+
+    steps = []
+    result = None
+    async for event in orchestrator.convert_stream(text):
         if event["type"] == "step":
             steps.append(event["data"])
         elif event["type"] == "result":

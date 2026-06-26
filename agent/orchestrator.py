@@ -36,10 +36,10 @@ async def convert_stream(d0_text: str) -> AsyncGenerator[Dict[str, Any], None]:
         yield step("parsing", "Parsing D.0 segments", "error", str(e))
         yield {"type": "error", "data": {"message": str(e)}}
         return
-    yield step(
-        "parsing", "Parsing D.0 segments", "complete",
-        f"Parsed {len(parsed.segment_order)} segments, {parsed.total_fields} fields",
-    )
+    seg_types = len(parsed.segment_order)
+    seg_total = len(parsed.segments)
+    detail = f"Parsed {seg_total} segments ({seg_types} types), {parsed.total_fields} fields [{parsed.fmt} format]"
+    yield step("parsing", "Parsing D.0 segments", "complete", detail)
 
     # STEP 3 — Detect transaction type
     yield step("detecting", "Detecting transaction type", "running")
@@ -66,7 +66,7 @@ async def convert_stream(d0_text: str) -> AsyncGenerator[Dict[str, Any], None]:
         return
     total_mapped = sum(
         len(seg.in_place) + len(seg.added) + len(seg.removed)
-        for seg in mapping.segments.values()
+        for seg in mapping.segments
     )
     yield step("mapping", "Mapping fields segment by segment", "complete", f"Mapped {total_mapped} fields")
 
