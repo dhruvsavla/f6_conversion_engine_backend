@@ -1,0 +1,271 @@
+```json
+[
+  {
+    "field_id": "455-EM",
+    "field_name": "Prescription/Service Ref Number",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Rx number assigned by the pharmacy; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "402-D2",
+    "field_name": "Product/Service ID (NDC)",
+    "action": "transform",
+    "mandatory_f6": true,
+    "transform": "REMOVE_HYPHENS",
+    "notes": "11-digit NDC; remove all hyphens before transmitting per section 4.4 and page 9 rule (e.g. 0006-0171-54 becomes 00006017154)."
+  },
+  {
+    "field_id": "403-D3",
+    "field_name": "Product/Service ID Qualifier",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Value 03=NDC; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "407-D7",
+    "field_name": "Quantity Dispensed",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Amount dispensed; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "405-D5",
+    "field_name": "Days Supply",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Number of days the dispensed quantity will last; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "406-D6",
+    "field_name": "Compound Code",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "1=Not a compound, 2=Compound; carry unchanged per section 4.4. When value is 2, Compound Segment (CMP) is required and PA rules change."
+  },
+  {
+    "field_id": "408-D8",
+    "field_name": "DAW/Product Selection Code",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Dispense as written / product selection code; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "414-DE",
+    "field_name": "Fill Number",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "0=New prescription, 1-99=Refill number; Schedule II drugs must have fill number 0 per section 4.4.",
+    "warn_if_empty": false,
+    "warn_condition": {
+      "if": {
+        "logic": "AND",
+        "conditions": [
+          { "field": "CLM.414-DE", "operator": "neq", "value": "0" },
+          { "field": "CLM.414-DE", "operator": "not_empty", "value": null }
+        ]
+      }
+    },
+    "warn_code": "SCHII",
+    "warn_severity": "ERROR",
+    "warn_message": "Schedule II controlled substances must have Fill Number (414-DE) = 0; refills are not permitted."
+  },
+  {
+    "field_id": "415-DF",
+    "field_name": "Refills Authorized",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Optional; number of refills authorized by prescriber. Must be 0 for Schedule II controlled substances per section 4.4."
+  },
+  {
+    "field_id": "418-DI",
+    "field_name": "Quantity Prescribed",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "MANDATORY in F6; was optional in D.0. Original quantity prescribed by prescriber. Emit ERROR if missing per section 4.4 and page 9 rule.",
+    "warn_if_empty": true,
+    "warn_code": "QP",
+    "warn_severity": "ERROR",
+    "warn_message": "Field 418-DI (Quantity Prescribed) is MANDATORY in F6. If absent from the D.0 transaction, reject the claim with error code QP."
+  },
+  {
+    "field_id": "419-DJ",
+    "field_name": "Origin Code",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "1=Written, 2=Telephone, 3=Fax, 4=Electronic, 5=Pharmacy generated; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "420-DK",
+    "field_name": "Submission Clarification Code",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Situational; 42=Specialty pharmacy, 43=Long-term specialty. When 42 or 43, set Pharmacy Service Type (600-28) to 08 and require Prior Authorization Number (461-EU) per section 4.4."
+  },
+  {
+    "field_id": "461-EU",
+    "field_name": "Prior Authorization Number",
+    "action": "cases",
+    "mandatory_f6": false,
+    "notes": "Situational; required when Submission Clarification Code is 42 or 43, or when Compound Code is 2 per section 4.4.",
+    "cases": [
+      {
+        "when": {
+          "field": "CLM.420-DK",
+          "operator": "in",
+          "value": ["42", "43"]
+        },
+        "then": {
+          "action": "carry",
+          "mandatory_f6": true,
+          "warn_if_empty": true,
+          "warn_code": "PA42",
+          "warn_severity": "ERROR",
+          "warn_message": "Prior Authorization Number (461-EU) is required when Submission Clarification Code (420-DK) is 42 or 43."
+        }
+      },
+      {
+        "when": {
+          "field": "CLM.406-D6",
+          "operator": "eq",
+          "value": "2"
+        },
+        "then": {
+          "action": "carry",
+          "mandatory_f6": true,
+          "warn_if_empty": true,
+          "warn_code": "PACMP",
+          "warn_severity": "ERROR",
+          "warn_message": "Prior Authorization Number (461-EU) is required when Compound Code (406-D6) is 2 (see Section 4.10)."
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "carry",
+          "mandatory_f6": false
+        }
+      }
+    ]
+  },
+  {
+    "field_id": "409-D9",
+    "field_name": "Ingredient Cost Submitted",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Drug acquisition cost in cents (implied decimal); carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "412-DC",
+    "field_name": "Dispensing Fee Submitted",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Dispensing fee in cents; carry unchanged per section 4.4."
+  },
+  {
+    "field_id": "430-DU",
+    "field_name": "Gross Amount Due",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Total amount billed; must equal ingredient cost + dispensing fee per section 4.4."
+  },
+  {
+    "field_id": "423-DN",
+    "field_name": "Basis of Cost Determination",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Optional; 01=AWP, 02=Local wholesaler, 03=Direct, 04=EAC, 05=Acquisition, 06=MAC, 07=WAC; carry unchanged if present per section 4.4."
+  },
+  {
+    "field_id": "600-28",
+    "field_name": "Pharmacy Service Type",
+    "action": "cases",
+    "mandatory_f6": true,
+    "d0_present": false,
+    "notes": "NEW and MANDATORY in F6; not present in D.0. Value derived from other fields in priority order per section 4.4.1 derivation rules on page 9.",
+    "cases": [
+      {
+        "when": {
+          "field": "CLM.420-DK",
+          "operator": "in",
+          "value": ["42", "43"]
+        },
+        "then": {
+          "action": "add",
+          "default_value": "08"
+        }
+      },
+      {
+        "when": {
+          "field": "PAT.384-4X",
+          "operator": "in",
+          "value": ["03", "06", "09", "31", "32", "33"]
+        },
+        "then": {
+          "action": "add",
+          "default_value": "05"
+        }
+      },
+      {
+        "when": {
+          "field": "CLM.406-D6",
+          "operator": "eq",
+          "value": "2"
+        },
+        "then": {
+          "action": "add",
+          "default_value": "02"
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "add",
+          "default_value": "01"
+        }
+      }
+    ]
+  },
+  {
+    "field_id": "995-E2",
+    "field_name": "Dispensing Channel",
+    "action": "add",
+    "mandatory_f6": true,
+    "d0_present": false,
+    "default_value": "01",
+    "notes": "NEW in F6; not present in D.0. 01=Retail counter, 02=Mail order, 03=Specialty, 04=Long-term care. Append to CLM segment; default to 01 if unknown per section 4.4."
+  },
+  {
+    "field_id": "996-E3",
+    "field_name": "Unit Dose Indicator",
+    "action": "cases",
+    "mandatory_f6": false,
+    "d0_present": false,
+    "notes": "NEW in F6; not present in D.0. Y=Unit dose dispensing, N=Not unit dose. Required for LTC claims when Patient Residence is 03/06/09/31/32/33 per section 4.4.",
+    "cases": [
+      {
+        "when": {
+          "field": "PAT.384-4X",
+          "operator": "in",
+          "value": ["03", "06", "09", "31", "32", "33"]
+        },
+        "then": {
+          "action": "add",
+          "mandatory_f6": true,
+          "warn_if_empty": true,
+          "warn_code": "UDI",
+          "warn_severity": "ERROR",
+          "warn_message": "Unit Dose Indicator (996-E3) is required for LTC claims when Patient Residence (384-4X) is 03, 06, 09, 31, 32, or 33."
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "add",
+          "mandatory_f6": false
+        }
+      }
+    ]
+  }
+]
+```

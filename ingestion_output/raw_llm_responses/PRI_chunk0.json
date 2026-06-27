@@ -1,0 +1,73 @@
+```json
+[
+  {
+    "field_id": "409-D9",
+    "field_name": "Ingredient Cost Submitted",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Drug cost in cents (implied 2 decimal places); carry unchanged per PRI segment table, page 11."
+  },
+  {
+    "field_id": "412-DC",
+    "field_name": "Dispensing Fee Submitted",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Pharmacy dispensing fee in cents; carry unchanged per PRI segment table, page 11."
+  },
+  {
+    "field_id": "426-DQ",
+    "field_name": "Usual and Customary Charge",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Pharmacy's usual charge to the general public; carry unchanged if present per PRI segment table, page 11."
+  },
+  {
+    "field_id": "430-DU",
+    "field_name": "Gross Amount Due",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Total amount billed in cents; carry unchanged per PRI segment table, page 11."
+  },
+  {
+    "field_id": "423-DN",
+    "field_name": "Basis of Cost Determination",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "How ingredient cost was calculated; carry unchanged if present per PRI segment table, page 11."
+  },
+  {
+    "field_id": "433-DX",
+    "field_name": "Patient Paid Amount Submitted",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Amount collected from patient at point of sale; carry unchanged if present per PRI segment table, page 11."
+  },
+  {
+    "field_id": "478-H7",
+    "field_name": "Basis of Reimbursement",
+    "action": "add",
+    "mandatory_f6": true,
+    "d0_present": false,
+    "default_value": "",
+    "notes": "NEW and MANDATORY in F6; not present in D.0. How the payer calculates reimbursement. Append to end of PRI segment. Valid values: 01=AWP, 02=MAC, 03=WAC, 04=EAC, 05=Acquisition, 06=Contract. Emit WARN (code BRD) if value cannot be determined.",
+    "warn_if_empty": true,
+    "warn_code": "BRD",
+    "warn_severity": "WARN",
+    "warn_message": "Basis of Reimbursement (478-H7) value cannot be sourced from available data."
+  },
+  {
+    "field_id": "481-HA",
+    "field_name": "Professional Service Fee Submitted",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Fee for pharmacist clinical services (MTM, etc.); carry unchanged if present per PRI segment table, page 11."
+  },
+  {
+    "field_id": "562-J1",
+    "field_name": "Flat Sales Tax Amount",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Sales tax in cents if applicable; carry unchanged if present per PRI segment table, page 11."
+  }
+]
+```

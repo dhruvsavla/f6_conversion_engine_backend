@@ -1,100 +1,89 @@
-from typing import Any, Dict
+"""
+backend/agent/transaction_detector.py
 
-from .rules_reader import RuleSet
+Detects NCPDP transaction type from a ParsedTransaction.
+Uses ParsedTransaction.get_field() and has_segment() — no dict access.
+
+Detection priority (most specific first, RETAIL is the guaranteed fallback):
+  REVERSAL > ELIGIBILITY > PRIOR_AUTH > COMPOUND > LTC > COB > MEDICARE_PART_D
+  > CONTROLLED > SPECIALTY > RETAIL
+"""
+from __future__ import annotations
+
 from .segment_parser import ParsedTransaction
 
 
-def detect(parsed: ParsedTransaction, ruleset: RuleSet) -> str:
-    """Detect the NCPDP transaction type from parsed D.0 segments using rules."""
-    hdr = _fmap(parsed, "HDR")
-    clm = _fmap(parsed, "CLM")
-    pat = _fmap(parsed, "PAT")
-    ins = _fmap(parsed, "INS")
+class TransactionDetector:
 
-    tx_code = hdr.get("103-A3", "").strip().upper()
-    compound_code = clm.get("406-D6", "").strip()
-    patient_residence = pat.get("384-7E", "").strip()
-    group_id = ins.get("301-C1", "").strip()
+    def detect(self, tx: ParsedTransaction, ruleset=None) -> str:
+        """
+        Detect transaction type. ruleset parameter accepted for backward compat
+        but the detection logic is fully self-contained here.
+        """
+        tx_code  = (tx.get_field('HDR', '103-A3') or '').strip().upper()
+        compound = (tx.get_field('CLM', '406-D6') or '').strip()
+        pat_res  = (tx.get_field('PAT', '384-7E') or tx.get_field('PAT', '384-4X') or '').strip()
+        scc      = (tx.get_field('CLM', '420-DK') or '').strip()
+        level_of_service = (tx.get_field('CLM', '419-DJ') or '').strip()
+        group_id = (tx.get_field('INS', '301-C1') or '').strip()
 
-    priority = ruleset.global_config.get(
-        "transaction_detection_priority",
-        ["REVERSAL", "ELIGIBILITY", "PRIOR_AUTH", "COMPOUND",
-         "LTC", "COB", "MEDICARE_PART_D", "CONTROLLED", "SPECIALTY", "RETAIL"],
-    )
+        # ── Reversal: B2 / 02 / 11 transaction codes ──────────────────────
+        if tx_code in ('B2', '02', '11'):
+            return 'REVERSAL'
 
-    for tx_type in priority:
-        rules = ruleset.rules_by_tx.get(tx_type)
-        if not rules:
-            continue
-        detection = rules.get("detection", {})
-        if _matches(detection, tx_code, compound_code, patient_residence, group_id, parsed):
-            return tx_type
+        # ── Eligibility: E1 / 25 / E ──────────────────────────────────────
+        if tx_code in ('E1', '25', 'E', 'E0'):
+            return 'ELIGIBILITY'
 
-    return "RETAIL"
+        # ── Prior Authorization: PA / 21 / P1 ─────────────────────────────
+        if tx_code in ('PA', '21', 'P1', 'P4'):
+            return 'PRIOR_AUTH'
+
+        # ── Compound: compound code = 2 OR CMP/I1 segment present ─────────
+        if compound == '2' or tx.has_segment('CMP') or tx.has_segment('I1'):
+            return 'COMPOUND'
+
+        # ── LTC: patient residence is a long-term / facility code ──────────
+        # Codes 03, 06, 09, 31–33, 99 indicate nursing home / extended care
+        LTC_CODES = {'03', '06', '09', '31', '32', '33', '99'}
+        if pat_res in LTC_CODES:
+            return 'LTC'
+
+        # ── COB: COB or L1 (legacy alias) segment present ─────────────────
+        if tx.has_segment('COB') or tx.has_segment('L1'):
+            return 'COB'
+
+        # ── Medicare Part D: group ID prefix PDM / PDL ────────────────────
+        # Part D plans typically issue group IDs starting with "PDM" or "PDL"
+        if group_id.startswith(('PDM', 'PDL', 'PD-')):
+            return 'MEDICARE_PART_D'
+
+        # ── Controlled substance: DUR segment present ──────────────────────
+        # DUR segment is required for Schedule II–V controlled substances.
+        # SCC=08 is also sometimes used as a controlled-substance indicator.
+        if tx.has_segment('DUR') or tx.has_segment('D5') or scc == '08':
+            return 'CONTROLLED'
+
+        # ── Specialty: Level of Service = 3 OR SCC 42/43 ──────────────────
+        # Level of service 3 = specialty pharmacy (per many payer contracts).
+        # SCC 42/43 = specialty drug submission.
+        if level_of_service in ('3', '03') or scc in ('42', '43'):
+            return 'SPECIALTY'
+
+        # ── Default fallback ───────────────────────────────────────────────
+        print(f"DEBUG DETECTOR: HDR fields found = {[f.field_id for f in tx.get_segments('HDR')[0].fields]}")
+        print(f"DEBUG DETECTOR: tx_code={tx_code}, scc={scc}, level_of_service={level_of_service}")
+        return 'RETAIL'
 
 
-def _fmap(parsed: ParsedTransaction, seg: str) -> Dict[str, str]:
-    s = parsed.get_first(seg)
-    if s is None:
-        return {}
-    return {f.field_id: f.value for f in s.fields}
+# ── Module-level backward-compat wrapper ─────────────────────────────────────
+
+_detector = TransactionDetector()
 
 
-def _matches(
-    detection: Dict[str, Any],
-    tx_code: str,
-    compound_code: str,
-    patient_residence: str,
-    group_id: str,
-    parsed: ParsedTransaction,
-) -> bool:
-    if "transaction_code" in detection:
-        codes = [c.upper() for c in detection["transaction_code"]]
-        if tx_code not in codes:
-            return False
-
-    if "compound_code" in detection:
-        if compound_code not in detection["compound_code"]:
-            return False
-
-    if "compound_code_not" in detection:
-        if compound_code in detection["compound_code_not"]:
-            return False
-
-    if "patient_residence" in detection:
-        if patient_residence not in detection["patient_residence"]:
-            return False
-
-    if "patient_residence_not" in detection:
-        if patient_residence in detection["patient_residence_not"]:
-            return False
-
-    if "group_id_prefix" in detection:
-        if not group_id.startswith(detection["group_id_prefix"]):
-            return False
-
-    if "segment_present" in detection:
-        for seg in detection["segment_present"]:
-            if parsed.get_first(seg) is None:
-                return False
-
-    if "segment_not_present" in detection:
-        for seg in detection["segment_not_present"]:
-            if parsed.get_first(seg) is not None:
-                return False
-
-    if "field_present" in detection:
-        for seg_name, field_ids in detection["field_present"].items():
-            s = parsed.get_first(seg_name)
-            seg_field_ids = {f.field_id for f in s.fields} if s else set()
-            ids = field_ids if isinstance(field_ids, list) else [field_ids]
-            if not any(fid in seg_field_ids for fid in ids):
-                return False
-
-    if "submission_clarification_code" in detection:
-        clm = _fmap(parsed, "CLM")
-        code = clm.get("420-DK", "").strip()
-        if code not in detection["submission_clarification_code"]:
-            return False
-
-    return True
+def detect(parsed: ParsedTransaction, ruleset=None) -> str:
+    """
+    Module-level function matching the old interface.
+    ruleset parameter accepted but not used — detection is now self-contained.
+    """
+    return _detector.detect(parsed, ruleset)

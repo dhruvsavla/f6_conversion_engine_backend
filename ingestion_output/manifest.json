@@ -1,0 +1,13 @@
+{
+  "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpiubr4iva_ACME_PBM_F6_Implementation_Guide.pdf",
+  "transaction_type": "RETAIL",
+  "extracted_at": "2026-06-26T22:14:08.561022Z",
+  "valid_rules": 76,
+  "invalid_rules": 3,
+  "files_written": [
+    "ingestion_output/00_global.json",
+    "ingestion_output/01_retail.json",
+    "ingestion_output/06_compound.json"
+  ],
+  "flagged_file": "ingestion_output/flagged_for_review.json"
+}

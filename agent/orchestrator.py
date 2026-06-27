@@ -36,9 +36,13 @@ async def convert_stream(d0_text: str) -> AsyncGenerator[Dict[str, Any], None]:
         yield step("parsing", "Parsing D.0 segments", "error", str(e))
         yield {"type": "error", "data": {"message": str(e)}}
         return
+
     seg_types = len(parsed.segment_order)
     seg_total = len(parsed.segments)
+    err_count = len(parsed.all_errors())
     detail = f"Parsed {seg_total} segments ({seg_types} types), {parsed.total_fields} fields [{parsed.fmt} format]"
+    if err_count:
+        detail += f" — {err_count} non-fatal parse warning(s)"
     yield step("parsing", "Parsing D.0 segments", "complete", detail)
 
     # STEP 3 — Detect transaction type
@@ -64,10 +68,8 @@ async def convert_stream(d0_text: str) -> AsyncGenerator[Dict[str, Any], None]:
         yield step("mapping", "Mapping fields segment by segment", "error", str(e))
         yield {"type": "error", "data": {"message": f"Field mapping error: {e}"}}
         return
-    total_mapped = sum(
-        len(seg.in_place) + len(seg.added) + len(seg.removed)
-        for seg in mapping.segments
-    )
+
+    total_mapped = sum(len(seg.all_fields()) for seg in mapping.segments)
     yield step("mapping", "Mapping fields segment by segment", "complete", f"Mapped {total_mapped} fields")
 
     # STEP 6 — Assemble F6 output
@@ -77,9 +79,9 @@ async def convert_stream(d0_text: str) -> AsyncGenerator[Dict[str, Any], None]:
 
     # STEP 7 — Validate
     yield step("validating", "Running validation rules", "running")
-    findings = mapping.findings
+    findings = mapping.findings  # list[dict]
     error_count = sum(1 for f in findings if f.get("severity") == "ERROR")
-    warn_count = sum(1 for f in findings if f.get("severity") == "WARN")
+    warn_count  = sum(1 for f in findings if f.get("severity") == "WARN")
     yield step(
         "validating", "Running validation rules", "complete",
         f"{len(findings)} findings ({error_count} errors, {warn_count} warnings)",

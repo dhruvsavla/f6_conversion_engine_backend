@@ -1,0 +1,154 @@
+```json
+[
+  {
+    "field_id": "302-C2",
+    "field_name": "Cardholder ID",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Member insurance ID number; carry unchanged from D.0 per section 4.2 INS segment table."
+  },
+  {
+    "field_id": "301-C1",
+    "field_name": "Group ID",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Insurance group number; carry unchanged if present per section 4.2 INS segment table."
+  },
+  {
+    "field_id": "306-C6",
+    "field_name": "Patient Relationship Code",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Patient relationship code with values 01=Cardholder, 02=Spouse, 03=Child, 04=Other; carry unchanged per section 4.2."
+  },
+  {
+    "field_id": "308-C8",
+    "field_name": "Other Coverage Code",
+    "action": "cases",
+    "mandatory_f6": false,
+    "notes": "Situational field required when COB segment is present per section 4.2 INS segment table.",
+    "cases": [
+      {
+        "when": {
+          "field": "COB",
+          "operator": "not_empty",
+          "value": null
+        },
+        "then": {
+          "action": "carry",
+          "mandatory_f6": true
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "carry",
+          "mandatory_f6": false
+        }
+      }
+    ]
+  },
+  {
+    "field_id": "309-C9",
+    "field_name": "Eligibility Clarification Code",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Situational field required when eligibility requires clarification per section 4.2 INS segment table."
+  },
+  {
+    "field_id": "367-2N",
+    "field_name": "Benefit Network Indicator",
+    "action": "add",
+    "mandatory_f6": true,
+    "notes": "NEW mandatory F6 field not present in D.0; append to end of INS segment with default value 01 per section 4.2 explicit RULE.",
+    "d0_present": false,
+    "default_value": "01",
+    "warn_if_empty": true,
+    "warn_code": "BNS",
+    "warn_severity": "WARN",
+    "warn_message": "Benefit Network Indicator (367-2N) value could not be determined from available data; defaulting to 01."
+  },
+  {
+    "field_id": "694-ZJ",
+    "field_name": "Medicare Part D Indicator",
+    "action": "add",
+    "mandatory_f6": false,
+    "notes": "NEW situational F6 field not present in D.0; required when billing under Medicare Part D per section 4.2 INS segment table and explicit RULE.",
+    "d0_present": false,
+    "default_value": ""
+  },
+  {
+    "field_id": "COB.392-MU",
+    "field_name": "Benefit Stage Qualifier",
+    "action": "cases",
+    "mandatory_f6": false,
+    "notes": "Becomes mandatory in COB segment when INS.694-ZJ equals Y per section 4.2 explicit RULE; emit ERROR if missing in that scenario.",
+    "cases": [
+      {
+        "when": {
+          "field": "INS.694-ZJ",
+          "operator": "eq",
+          "value": "Y"
+        },
+        "then": {
+          "action": "carry",
+          "mandatory_f6": true
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "carry",
+          "mandatory_f6": false
+        }
+      }
+    ],
+    "warn_if_empty": true,
+    "warn_condition": {
+      "if": {
+        "field": "INS.694-ZJ",
+        "operator": "eq",
+        "value": "Y"
+      }
+    },
+    "warn_code": "MBQ",
+    "warn_severity": "ERROR",
+    "warn_message": "Benefit Stage Qualifier (392-MU) is mandatory in the COB segment when Medicare Part D Indicator (694-ZJ) is Y but is missing."
+  },
+  {
+    "field_id": "695-ZK",
+    "field_name": "LIS Level",
+    "action": "cases",
+    "mandatory_f6": false,
+    "notes": "Low Income Subsidy level; required for Part D claims when applicable per section 4.2 INS segment table.",
+    "cases": [
+      {
+        "when": {
+          "field": "INS.694-ZJ",
+          "operator": "eq",
+          "value": "Y"
+        },
+        "then": {
+          "action": "carry",
+          "mandatory_f6": true
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "carry",
+          "mandatory_f6": false
+        }
+      }
+    ],
+    "extraction_confidence": "LOW"
+  },
+  {
+    "field_id": "990-MG",
+    "field_name": "Legacy Routing Code",
+    "action": "remove",
+    "mandatory_f6": false,
+    "notes": "DEPRECATED in F6; must be excluded from all F6 output including all repeating INS segment occurrences per section 4.2 explicit RULE and NOTE."
+  }
+]
+```

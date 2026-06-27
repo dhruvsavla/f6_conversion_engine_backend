@@ -1,0 +1,96 @@
+```json
+[
+  {
+    "field_id": "304-C4",
+    "field_name": "Date of Birth",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Mandatory in all claim types; carry unchanged in CCYYMMDD format per PAT segment rules.",
+    "params": { "length": 8, "format": "CCYYMMDD" }
+  },
+  {
+    "field_id": "305-C5",
+    "field_name": "Patient Gender Code",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Carry unchanged; valid values are 0=Unknown, 1=Male, 2=Female per PAT segment rules.",
+    "params": { "length": 1 }
+  },
+  {
+    "field_id": "310-CA",
+    "field_name": "Patient First Name",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Optional; carry unchanged if present in D.0 per PAT segment rules.",
+    "params": { "length": 12 }
+  },
+  {
+    "field_id": "311-CB",
+    "field_name": "Patient Last Name",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "Optional; carry unchanged if present in D.0 per PAT segment rules.",
+    "params": { "length": 15 }
+  },
+  {
+    "field_id": "384-4X",
+    "field_name": "Patient Residence",
+    "action": "cases",
+    "mandatory_f6": false,
+    "notes": "Situational field with expanded LTC codes in F6; drives Pharmacy Service Type conditional logic per PAT segment rules.",
+    "params": { "length": 2 },
+    "cases": [
+      {
+        "when": {
+          "field": "PAT.384-4X",
+          "operator": "in",
+          "value": ["03", "06", "09", "31", "32", "33"]
+        },
+        "then": {
+          "action": "modify",
+          "set_field": "PRI.600-28",
+          "set_value": "05",
+          "notes": "LTC residence codes trigger Pharmacy Service Type = 05 (Long-Term Care)."
+        }
+      },
+      {
+        "when": "default",
+        "then": {
+          "action": "carry",
+          "notes": "Non-LTC residence codes (e.g. 01=Home) are carried unchanged; Pharmacy Service Type is not modified by this rule."
+        }
+      }
+    ]
+  },
+  {
+    "field_id": "600-28",
+    "field_name": "Pharmacy Service Type",
+    "action": "cases",
+    "mandatory_f6": false,
+    "notes": "Must be set to 05 when Patient Residence indicates LTC per explicit rule in PAT segment section.",
+    "cases": [
+      {
+        "when": {
+          "field": "PAT.384-4X",
+          "operator": "in",
+          "value": ["03", "06", "09", "31", "32", "33"]
+        },
+        "then": {
+          "action": "add",
+          "default_value": "05"
+        }
+      }
+    ]
+  },
+  {
+    "field_id": "357-NV",
+    "field_name": "Patient Location",
+    "action": "add",
+    "mandatory_f6": false,
+    "notes": "New in F6 with no D.0 equivalent; append to end of PAT segment with default value 01 per explicit rule in PAT segment section.",
+    "default_value": "01",
+    "d0_present": false,
+    "params": { "length": 2 }
+  }
+]
+```

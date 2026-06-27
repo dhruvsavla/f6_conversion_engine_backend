@@ -1,226 +1,325 @@
+"""
+backend/agent/field_mapper.py
+
+Maps each ParsedSegment to a MappedSegment by applying JSON rules.
+Condition-aware: rules can be gated by condition blocks.
+
+Rule action types:
+  carry     — copy field unchanged
+  transform — apply a named transform (ZERO_PAD_LEFT, SET_VALUE, …)
+  add       — new F6 field absent from D.0; append with default value
+  remove    — field deprecated in F6; rendered as ~~field=value~~ in output
+  modify    — remap value via lookup table; change_type='modified' if value changed
+  cases     — meta-action: pick action based on another field's value
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dc_field
-from typing import Any, Dict, List
+import logging
+from typing import Optional
 
 from .condition_evaluator import ConditionEvaluator
-from .segment_parser import ParsedTransaction
+from .segment_parser import ParsedTransaction, ParsedSegment, ParsedField
 from .transformer import apply_transform
 
+# Import from sibling package (models/ is a sibling of agent/)
+from models.schemas import MappedField, MappedSegment, MappingResult
 
-@dataclass
-class FieldEntry:
-    field_id: str
-    field_name: str
-    old_value: str
-    new_value: str
-    change_type: str  # carried | transformed | added | removed | modified
-    rule_applied: str
-    notes: str
-    condition_evaluated: bool = False
-    condition_result: bool = True
-    condition_expression: str = ""
-
-
-@dataclass
-class SegmentResult:
-    name: str
-    occurrence: int
-    in_place: List[FieldEntry]  # non-removed D.0 fields in original order
-    added: List[FieldEntry]     # new F6 fields in rules order
-    removed: List[FieldEntry]   # deprecated D.0 fields
-
-
-@dataclass
-class MappingResult:
-    segments: List[SegmentResult]  # ordered list — one entry per input segment occurrence
-    findings: List[Dict[str, Any]]
-
-    @property
-    def segment_order(self) -> List[str]:
-        """Unique segment IDs in original order (backward compat)."""
-        seen: dict = {}
-        for seg in self.segments:
-            seen.setdefault(seg.name, True)
-        return list(seen.keys())
-
+logger = logging.getLogger(__name__)
 
 _evaluator = ConditionEvaluator()
 
 
-def _check_condition(rule: Dict, parsed: ParsedTransaction) -> tuple[bool, str, bool]:
-    """Return (should_apply, expression_str, was_evaluated)."""
-    condition = rule.get("condition")
-    if not condition:
-        return True, "", False
-    result, expr = _evaluator.evaluate(condition, parsed)
-    return result, expr, True
+# ── FieldMapper class ─────────────────────────────────────────────────────────
 
+class FieldMapper:
 
-def _resolve_cases(rule: Dict, parsed: ParsedTransaction) -> Dict:
-    """Resolve a cases rule to an effective sub-rule by evaluating each when-block."""
-    for case in rule.get("cases", []):
-        if case.get("default"):
-            then = case.get("then", {})
-            return {**rule, **then, "action": then.get("action", "carry")}
-        when = case.get("when")
-        if when:
-            passed, _ = _evaluator.evaluate({"if": when}, parsed)
-            if passed:
-                then = case.get("then", {})
-                return {**rule, **then, "action": then.get("action", "carry")}
-    return {**rule, "action": "carry"}
+    def map(self, tx: ParsedTransaction, rules: dict) -> MappingResult:
+        """
+        Main entry point. Maps all segments in the ParsedTransaction.
+        Preserves original segment order and occurrence.
+        """
+        tx_type = tx.detected_type if hasattr(tx, 'detected_type') else 'RETAIL'
+        segment_rules = rules.get('segments', {})
 
+        mapped_segments: list[MappedSegment] = []
+        findings: list[dict] = [] # <--- NEW: Initialize findings list
 
-def _build_entry(
-    fid: str,
-    val: str,
-    rule: Dict,
-    action: str,
-    cond_eval: bool,
-    cond_result: bool,
-    cond_expr: str,
-) -> FieldEntry:
-    """Build a FieldEntry for carry / transform / modify actions."""
-    field_name = rule.get("field_name", f"Field {fid}")
-    notes = rule.get("notes", "")
+        for parsed_seg in tx.segments:
+            seg_rule_list = segment_rules.get(parsed_seg.normalized_id, [])
+            mapped = self._map_segment(parsed_seg, seg_rule_list, tx, findings)
+            mapped_segments.append(mapped)
 
-    if action == "transform":
-        transform_name = rule.get("transform", "")
-        params = dict(rule.get("params", {}))
-        if "value" in rule:
-            params["value"] = rule["value"]
-        new_val = apply_transform(val, transform_name, params)
-        return FieldEntry(
-            field_id=fid, field_name=field_name,
-            old_value=val, new_value=new_val, change_type="transformed",
-            rule_applied=transform_name, notes=notes,
-            condition_evaluated=cond_eval, condition_result=cond_result,
-            condition_expression=cond_expr,
+        return MappingResult(
+            segments=mapped_segments,
+            detected_type=tx_type,
+            parse_errors=tx.all_errors(),
+            findings=findings # <--- NEW: Return findings to the orchestrator
         )
 
-    if action == "modify":
-        mapping = rule.get("map", {})
-        default = rule.get("default_value", val)
-        new_val = mapping.get(val, str(default))
-        return FieldEntry(
-            field_id=fid, field_name=field_name,
-            old_value=val, new_value=new_val, change_type="modified",
-            rule_applied="MAP_CODE", notes=notes,
-            condition_evaluated=cond_eval, condition_result=cond_result,
-            condition_expression=cond_expr,
+    def _map_segment(
+        self,
+        parsed_seg: ParsedSegment,
+        seg_rules: list[dict],
+        tx: ParsedTransaction,
+        findings: list[dict] # <--- Pass findings array down
+    ) -> MappedSegment:
+        
+        mapped = MappedSegment(
+            segment_id=parsed_seg.segment_id,
+            normalized_id=parsed_seg.normalized_id,
+            occurrence=parsed_seg.occurrence,
+            raw_index=parsed_seg.raw_index,
         )
 
-    # default: carry
-    return FieldEntry(
-        field_id=fid, field_name=field_name,
-        old_value=val, new_value=val, change_type="carried",
-        rule_applied="CARRY", notes=notes,
-        condition_evaluated=cond_eval, condition_result=cond_result,
-        condition_expression=cond_expr,
-    )
-
-
-def map_fields(parsed: ParsedTransaction, tx_rules: Dict[str, Any]) -> MappingResult:
-    """Apply per-field rules to produce a structured mapping result."""
-    segment_rules: Dict[str, List[Dict]] = tx_rules.get("segments", {})
-    result_segs: List[SegmentResult] = []
-    findings: List[Dict[str, Any]] = []
-
-    for seg in parsed.segments:
-        seg_id = seg.segment_id
-        rules_list: List[Dict] = segment_rules.get(seg_id, [])
-        rules_by_id: Dict[str, Dict] = {
-            r["field_id"]: r for r in rules_list if r.get("action") != "add"
+        d0_field_map: dict[str, ParsedField] = {
+            f.field_id: f for f in parsed_seg.fields
         }
-        no_seg_rules = not rules_list
+        handled_field_ids: set[str] = set()
 
-        in_place: List[FieldEntry] = []
-        removed: List[FieldEntry] = []
-        added: List[FieldEntry] = []
+        for rule in seg_rules:
+            result = self._apply_rule(rule, d0_field_map, parsed_seg, tx, findings)
+            if result is None:
+                continue
 
-        # Process each D.0 field in original order
-        for pf in seg.fields:
-            fid, val = pf.field_id, pf.value
-            rule = rules_by_id.get(fid)
+            field_id = rule.get('field_id', '')
+            handled_field_ids.add(field_id)
 
-            if rule is None:
-                in_place.append(FieldEntry(
-                    field_id=fid, field_name=f"Field {fid}",
-                    old_value=val, new_value=val, change_type="carried",
-                    rule_applied="CARRY_NO_RULE" if no_seg_rules else "IMPLICIT_CARRY",
-                    notes="No rule defined; carried unchanged.",
+            change_type = result.change_type
+            if change_type == 'carried': mapped.carried.append(result)
+            elif change_type == 'transformed': mapped.transformed.append(result)
+            elif change_type == 'added': mapped.added.append(result)
+            elif change_type == 'removed': mapped.removed.append(result)
+            elif change_type == 'modified': mapped.modified.append(result)
+            elif change_type == 'missing': mapped.missing.append(result)
+
+        for d0_field in parsed_seg.fields:
+            if d0_field.field_id not in handled_field_ids:
+                mapped.carried.append(MappedField(
+                    field_id=d0_field.field_id,
+                    field_name=d0_field.field_id,
+                    change_type='carried',
+                    old_value=d0_field.value,
+                    new_value=d0_field.value,
+                    rule_applied='IMPLICIT_CARRY',
+                    notes='No rule defined for this field. Carried unchanged.',
+                    occurrence=parsed_seg.occurrence,
                 ))
-                continue
 
-            should_apply, cond_expr, cond_eval = _check_condition(rule, parsed)
+        return mapped
 
-            if not should_apply:
-                in_place.append(FieldEntry(
-                    field_id=fid, field_name=rule.get("field_name", f"Field {fid}"),
-                    old_value=val, new_value=val, change_type="carried",
-                    rule_applied="CONDITION_SKIP", notes=rule.get("notes", ""),
-                    condition_evaluated=True, condition_result=False,
-                    condition_expression=cond_expr,
-                ))
-                continue
+    def _apply_rule(
+        self,
+        rule: dict,
+        d0_field_map: dict[str, ParsedField],
+        parsed_seg: ParsedSegment,
+        tx: ParsedTransaction,
+        findings: list[dict] # <--- Passed from _map_segment
+    ) -> Optional[MappedField]:
+        
+        field_id    = rule.get('field_id', '')
+        field_name  = rule.get('field_name', field_id)
+        action      = rule.get('action', 'carry')
+        occurrence  = parsed_seg.occurrence
 
-            action = rule.get("action", "carry")
-            effective_rule = rule
+        # Step 1: Resolve 'cases' action first
+        if action == 'cases':
+            resolved_rule = self._resolve_cases(rule, tx)
+            if resolved_rule is None:
+                return None
+            rule = resolved_rule
+            action = rule.get('action', 'carry')
 
-            if action == "cases":
-                effective_rule = _resolve_cases(rule, parsed)
-                action = effective_rule.get("action", "carry")
+        # Step 2: Evaluate condition guard
+        condition_evaluated = False
+        condition_passed    = True
+        condition_expr      = ''
 
-            if action == "remove":
-                removed.append(FieldEntry(
-                    field_id=fid, field_name=rule.get("field_name", f"Field {fid}"),
-                    old_value=val, new_value="", change_type="removed",
-                    rule_applied="REMOVE", notes=rule.get("notes", ""),
-                    condition_evaluated=cond_eval, condition_result=True,
-                    condition_expression=cond_expr,
-                ))
-            else:
-                in_place.append(_build_entry(fid, val, effective_rule, action, cond_eval, True, cond_expr))
+        condition_block = rule.get('condition')
+        if condition_block:
+            condition_evaluated = True
+            if_block = condition_block.get('if')
+            if if_block:
+                condition_passed, condition_expr = _evaluator.evaluate(if_block, tx) # <--- FIXED
+            
+            if not condition_passed:
+                d0_field = d0_field_map.get(field_id)
+                if d0_field:
+                    return MappedField(
+                        field_id=field_id, field_name=field_name, change_type='carried',
+                        old_value=d0_field.value, new_value=d0_field.value, rule_applied='CONDITION_NOT_MET_IMPLICIT_CARRY',
+                        notes=f'Condition not satisfied ({condition_expr}). Carried.', occurrence=occurrence,
+                        condition_evaluated=True, condition_passed=False, condition_expression=condition_expr,
+                    )
+                return None
 
-        # Process add rules — new F6 fields not present in D.0
-        existing_ids = {pf.field_id for pf in seg.fields}
-        for rule in rules_list:
-            if rule.get("action") != "add":
-                continue
-            fid = rule["field_id"]
-            if fid in existing_ids:
-                continue
+        # Step 3: Apply the concrete action
+        d0_field = d0_field_map.get(field_id)
 
-            should_apply, _, _ = _check_condition(rule, parsed)
-            if not should_apply:
-                continue
+        # ── CARRY ─────────────────────────────────────────────────────────────
+        if action == 'carry':
+            if d0_field is None:
+                # Catch missing fields that are conditionally mandatory
+                if rule.get('warn_if_empty') or rule.get('mandatory_f6'):
+                    findings.append({
+                        "severity": rule.get("warn_severity", "ERROR"),
+                        "code": rule.get("warn_code", "MISSING"),
+                        "message": rule.get("warn_message", f"{field_name} is required but missing."),
+                        "segment": parsed_seg.segment_id,
+                        "field_id": field_id,
+                    })
+                    return MappedField(
+                        field_id=field_id, field_name=field_name, change_type='missing',
+                        old_value='', new_value='', rule_applied='CARRY_MISSING',
+                        notes='Field required by condition but absent from D.0.', occurrence=occurrence,
+                        condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
+                    )
+                return None  
+            
+            return MappedField(
+                field_id=field_id, field_name=field_name, change_type='carried',
+                old_value=d0_field.value, new_value=d0_field.value, rule_applied='CARRY',
+                notes=rule.get('notes', ''), occurrence=occurrence,
+                condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
+            )
 
-            field_name = rule.get("field_name", f"Field {fid}")
-            default_val = str(rule.get("default_value", ""))
-            notes = rule.get("notes", "")
+        # ── TRANSFORM ─────────────────────────────────────────────────────────
+        if action == 'transform':
+            if d0_field is None:
+                return None
+            
+            transform_name = rule.get("transform", "")
+            params = dict(rule.get("params", {}))
+            if "value" in rule:
+                params["value"] = rule["value"]
+            
+            # Using the apply_transform imported at the top of your file
+            new_val = apply_transform(d0_field.value, transform_name, params)
+            
+            return MappedField(
+                field_id=field_id, field_name=field_name, change_type='transformed',
+                old_value=d0_field.value, new_value=new_val, rule_applied=transform_name,
+                notes=rule.get('notes', ''), occurrence=occurrence,
+                condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
+            )
 
-            added.append(FieldEntry(
-                field_id=fid, field_name=field_name,
-                old_value="", new_value=default_val, change_type="added",
-                rule_applied="ADD_DEFAULT", notes=notes,
-            ))
+        # ── ADD ───────────────────────────────────────────────────────────────
+        if action == 'add':
+            default_val = rule.get('default_value', '')
+            actual_value = d0_field.value if d0_field else default_val
 
-            if rule.get("warn_if_empty") and not default_val:
+            if rule.get('warn_if_empty') and not actual_value:
                 findings.append({
                     "severity": rule.get("warn_severity", "WARN"),
                     "code": rule.get("warn_code", "NEW"),
                     "message": rule.get("warn_message", f"{field_name} is empty."),
-                    "segment": seg_id,
-                    "field_id": fid,
+                    "segment": parsed_seg.segment_id,
+                    "field_id": field_id,
                 })
+            return MappedField(
+                field_id=field_id, field_name=field_name, change_type='added',
+                old_value='', new_value=actual_value, rule_applied='ADD',
+                notes=rule.get('notes', ''), occurrence=occurrence,
+                condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
+            )
 
-        result_segs.append(SegmentResult(
-            name=seg_id,
-            occurrence=seg.occurrence,
-            in_place=in_place,
-            added=added,
-            removed=removed,
-        ))
+        # ── REMOVE ────────────────────────────────────────────────────────────
+        if action == 'remove':
+            if d0_field is None:
+                return None # Nothing to remove
+                
+            return MappedField(
+                field_id=field_id, field_name=field_name,
+                change_type='removed', old_value=d0_field.value, new_value='',
+                rule_applied='REMOVE', notes=rule.get('notes', 'Field deprecated in F6.'),
+                occurrence=occurrence,
+                condition_evaluated=condition_evaluated, condition_passed=condition_passed,
+                condition_expression=condition_expr,
+            )
 
-    return MappingResult(segments=result_segs, findings=findings)
+        # ── MODIFY ────────────────────────────────────────────────────────────
+        if action == 'modify':
+            if d0_field is None:
+                return None
+                
+            mapping_table: dict[str, str] = rule.get('map', {})
+            new_val = mapping_table.get(d0_field.value.strip(), d0_field.value)
+            ct = 'modified' if new_val != d0_field.value else 'carried'
+            
+            return MappedField(
+                field_id=field_id, field_name=field_name,
+                change_type=ct, old_value=d0_field.value, new_value=new_val,
+                rule_applied='MAP_CODE', notes=rule.get('notes', ''),
+                occurrence=occurrence,
+                condition_evaluated=condition_evaluated, condition_passed=condition_passed,
+                condition_expression=condition_expr,
+            )
+
+        logger.warning(f'Unknown action {action!r} for field {field_id}')
+        return None
+
+    def _bucket(self, mapped: MappedSegment, mf: MappedField) -> None:
+        """Route a MappedField into the correct list on its MappedSegment."""
+        ct = mf.change_type
+        if ct == 'carried':
+            mapped.carried.append(mf)
+        elif ct == 'transformed':
+            mapped.transformed.append(mf)
+        elif ct == 'removed':
+            mapped.removed.append(mf)
+        elif ct == 'modified':
+            mapped.modified.append(mf)
+        elif ct == 'added':
+            mapped.added.append(mf)
+        elif ct == 'missing':
+            mapped.missing.append(mf)
+        else:
+            mapped.carried.append(mf)  # safe fallback
+
+    def _check_condition(
+        self, rule: dict, tx: ParsedTransaction
+    ) -> tuple[bool, str, bool]:
+        """
+        Return (should_apply, expression_str, was_evaluated).
+        If no condition block exists, was_evaluated=False and should_apply=True.
+        """
+        condition = rule.get('condition')
+        if not condition:
+            return True, '', False
+        # Field mapper passes the 'if' sub-block directly to the evaluator
+        if_block = condition.get('if', condition)
+        result, expr = _evaluator.evaluate(if_block, tx)
+        return result, expr, True
+
+    def _resolve_cases(self, rule: dict, tx: ParsedTransaction) -> Optional[dict]:
+        """
+        Evaluate each case in order; return the first matching case's effective rule.
+        The effective rule inherits parent rule fields (field_id, field_name, notes)
+        and overrides with the case's 'then' block.
+        """
+        for case in rule.get('cases', []):
+            when = case.get('when')
+
+            if when == 'default':
+                then = case.get('then', {})
+                return {**rule, **then, 'action': then.get('action', 'carry')}
+
+            if isinstance(when, dict):
+                passed, _ = _evaluator.evaluate(when, tx)
+                if passed:
+                    then = case.get('then', {})
+                    return {**rule, **then, 'action': then.get('action', 'carry')}
+
+        return None  # No case matched and no default
+
+
+# ── Module-level backward-compat wrapper ─────────────────────────────────────
+
+_mapper = FieldMapper()
+
+
+def map_fields(parsed: ParsedTransaction, tx_rules: dict) -> MappingResult:
+    """
+    Module-level function matching the old interface.
+    Callers (orchestrator, tests) don't need to change.
+    """
+    return _mapper.map(parsed, tx_rules)

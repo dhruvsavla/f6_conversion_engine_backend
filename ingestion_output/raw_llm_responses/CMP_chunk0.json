@@ -1,0 +1,133 @@
+```json
+[
+  {
+    "field_id": "450-EF",
+    "field_name": "Compound Dosage Form Code",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "451-EG",
+    "field_name": "Compound Dispensing Unit Form Indicator",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "452-EH",
+    "field_name": "Compound Ingredient Count",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Total number of ingredients (max 25); carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "488-RE",
+    "field_name": "Compound Product ID Qualifier",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "NDC qualifier per ingredient; carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "489-TE",
+    "field_name": "Compound Product ID",
+    "action": "transform",
+    "mandatory_f6": true,
+    "notes": "NDC of each ingredient; hyphens must be removed per CMP segment table on page 14.",
+    "transform": "REMOVE_HYPHENS",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "448-ED",
+    "field_name": "Compound Ingredient Quantity",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Quantity per ingredient; carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "449-EE",
+    "field_name": "Compound Ingredient Drug Cost",
+    "action": "carry",
+    "mandatory_f6": true,
+    "notes": "Cost per ingredient in cents; carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "490-UE",
+    "field_name": "Compound Ingredient Basis of Cost",
+    "action": "carry",
+    "mandatory_f6": false,
+    "notes": "How cost was determined; optional, carry unchanged per CMP segment table on page 14.",
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  },
+  {
+    "field_id": "891-MX",
+    "field_name": "Compound Ingredient Modifier Code",
+    "action": "add",
+    "mandatory_f6": false,
+    "notes": "New field in F6 not present in D.0; append to CMP segment with empty value per page 14.",
+    "default_value": "",
+    "d0_present": false,
+    "condition": {
+      "if": {
+        "field": "CLM.406-D6",
+        "operator": "eq",
+        "value": "2"
+      }
+    }
+  }
+]
+```

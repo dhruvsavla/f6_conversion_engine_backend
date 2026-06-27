@@ -1,0 +1,144 @@
+[
+  {
+    "rule": {
+      "field_id": "414-DE",
+      "field_name": "Fill Number",
+      "action": "carry",
+      "mandatory_f6": true,
+      "notes": "0=New prescription, 1-99=Refill number; Schedule II drugs must have fill number 0 per section 4.4.",
+      "warn_if_empty": false,
+      "warn_message": "Schedule II controlled substances must have Fill Number (414-DE) = 0; refills are not permitted.",
+      "warn_severity": "ERROR",
+      "warn_condition": {
+        "if": {
+          "logic": "AND",
+          "conditions": [
+            {
+              "field": "CLM.414-DE",
+              "operator": "neq",
+              "value": "0"
+            },
+            {
+              "field": "CLM.414-DE",
+              "operator": "not_empty",
+              "value": null
+            }
+          ]
+        }
+      },
+      "warn_code": "SCHII"
+    },
+    "segment_id": "CLM",
+    "issues": [
+      "INVALID: warn_condition.if.field is missing",
+      "INVALID: warn_condition.if.operator is missing"
+    ]
+  },
+  {
+    "rule": {
+      "field_id": "COB.392-MU",
+      "field_name": "Benefit Stage Qualifier",
+      "action": "cases",
+      "mandatory_f6": false,
+      "notes": "Becomes mandatory in COB segment when INS.694-ZJ equals Y per section 4.2 explicit RULE; emit ERROR if missing in that scenario.",
+      "warn_if_empty": true,
+      "warn_message": "Benefit Stage Qualifier (392-MU) is mandatory in the COB segment when Medicare Part D Indicator (694-ZJ) is Y but is missing.",
+      "warn_severity": "ERROR",
+      "warn_condition": {
+        "if": {
+          "field": "INS.694-ZJ",
+          "operator": "eq",
+          "value": "Y"
+        }
+      },
+      "warn_code": "MBQ",
+      "cases": [
+        {
+          "when": {
+            "field": "INS.694-ZJ",
+            "operator": "eq",
+            "value": "Y"
+          },
+          "then": {
+            "action": "carry",
+            "mandatory_f6": true
+          }
+        },
+        {
+          "when": "default",
+          "then": {
+            "action": "carry",
+            "mandatory_f6": false
+          }
+        }
+      ]
+    },
+    "segment_id": "INS",
+    "issues": [
+      "INVALID: field_id \"COB.392-MU\" does not match NNN-XX pattern"
+    ]
+  },
+  {
+    "rule": {
+      "field_id": "441-E6",
+      "field_name": "Prescriber DEA Number",
+      "action": "cases",
+      "mandatory_f6": false,
+      "notes": "Controlled substance determination inferred from DAW code or NDC per guide text; Schedule II-V mapping to a specific field (e.g. CLM.407-D7) is an assumption — confirm exact source field for controlled substance indicator.",
+      "extraction_confidence": "LOW",
+      "cases": [
+        {
+          "when": {
+            "logic": "AND",
+            "conditions": [
+              {
+                "field": "CLM.407-D7",
+                "operator": "in",
+                "value": [
+                  "2",
+                  "3",
+                  "4",
+                  "5"
+                ]
+              },
+              {
+                "field": "PRE.441-E6",
+                "operator": "empty",
+                "value": null
+              }
+            ]
+          },
+          "then": {
+            "action": "add",
+            "default_value": "",
+            "warn_if_empty": true,
+            "warn_code": "DEA",
+            "warn_severity": "ERROR",
+            "warn_message": "Prescriber DEA Number (441-E6) is required for controlled substance (Schedule II-V) claims but is absent."
+          }
+        },
+        {
+          "when": {
+            "field": "PRE.441-E6",
+            "operator": "not_empty",
+            "value": null
+          },
+          "then": {
+            "action": "carry"
+          }
+        },
+        {
+          "when": "default",
+          "then": {
+            "action": "carry"
+          }
+        }
+      ]
+    },
+    "segment_id": "PRE",
+    "issues": [
+      "INVALID: cases[0].when.field is missing",
+      "INVALID: cases[0].when.operator is missing"
+    ]
+  }
+]

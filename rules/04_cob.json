@@ -87,7 +87,25 @@
       { "field_id": "443-E8", "field_name": "Other Payer Date", "action": "carry" },
       { "field_id": "341-HB", "field_name": "Other Payer Amount Paid Count", "action": "carry" },
       { "field_id": "342-HC", "field_name": "Other Payer Amount Paid Qualifier", "action": "carry" },
-      { "field_id": "431-DV", "field_name": "Other Payer Amount Paid", "action": "carry" }
+      { "field_id": "431-DV", "field_name": "Other Payer Amount Paid", "action": "carry" },
+      {
+        "field_id": "392-MU",
+        "field_name": "Other Coverage Code / Benefit Stage Qualifier",
+        "action": "carry",
+        "warn_condition": {
+          "if": { "field": "INS.694-ZJ", "operator": "eq", "value": "Y" },
+          "warn_code": "BS",
+          "warn_severity": "WARN",
+          "warn_message": "Benefit Stage Qualifier (392-MU) must be populated when Medicare Part D is indicated (INS.694-ZJ=Y). Verify value matches Part D benefit phase."
+        },
+        "notes": "Required when the plan is Medicare Part D; 694-ZJ=Y signals a Part D adjudication."
+      },
+      {
+        "field_id": "694-ZJ",
+        "field_name": "Medicare Part D Coverage Indicator",
+        "action": "carry",
+        "notes": "New in F6. Y = Medicare Part D claim; drives conditional requirements on 392-MU."
+      }
     ],
     "PRE": [
       { "field_id": "466-EZ", "field_name": "Prescriber ID Qualifier", "action": "carry" },
