@@ -245,6 +245,38 @@ def insert_agent_steps(conversion_id: str, steps: list[dict]):
         ])
 
 
+def upsert_agent_step(conversion_id: str, step: dict) -> None:
+    """
+    Insert or update a single agent step row.
+    Called incrementally during _execute_forward so the DB-polling SSE
+    generator can observe progress in near-real-time rather than only
+    seeing the full step list once the entire conversion finishes.
+    """
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM agent_steps WHERE conversion_id=? AND step_id=?",
+            (conversion_id, step['id']),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE agent_steps SET status=?, detail=? WHERE id=?",
+                (step.get('status', 'complete'), step.get('detail', ''), existing['id']),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO agent_steps (conversion_id, step_order, step_id, label, status, detail) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    conversion_id,
+                    step.get('step_order', 0),
+                    step['id'],
+                    step.get('label', step['id']),
+                    step.get('status', 'complete'),
+                    step.get('detail', ''),
+                ),
+            )
+
+
 def get_agent_steps(conversion_id: str) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
@@ -558,3 +590,87 @@ def get_db_stats() -> dict:
             'total_rules':       total_rules,
             'active_rule_set':   rs_row['name'] if rs_row else None,
         }
+
+
+def get_flagged_count() -> int:
+    """Quick count for sidebar badge — reads file directly, no DB query."""
+    from pathlib import Path
+    import json as _json
+    p = Path('ingestion_output/flagged_for_review.json')
+    if not p.exists():
+        return 0
+    try:
+        return len(_json.loads(p.read_text()))
+    except Exception:
+        return 0
+
+
+# ── LLM Decisions ─────────────────────────────────────────────────────────────
+
+def insert_llm_decisions(
+    conversion_id: str,
+    decisions:     list,   # list[LLMDecision] — avoid circular import with engine
+    model:         str = "claude-sonnet-4-6",
+) -> None:
+    """Persist LLM decisions for compliance audit trail."""
+    if not decisions:
+        return
+    with db() as conn:
+        conn.executemany("""
+            INSERT INTO llm_decisions (
+                conversion_id, field_id, field_name, segment_id,
+                resolved_value, original_value, reasoning,
+                confidence, finding_code, action,
+                llm_model, phi_was_masked, was_overridden
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, [
+            (
+                conversion_id,
+                d.field_id, d.field_name, d.segment_id,
+                d.resolved_value, d.original_value, d.reasoning,
+                d.confidence, d.finding_code, d.action,
+                model, int(d.phi_was_masked), 0,
+            )
+            for d in decisions
+        ])
+
+
+def get_llm_decisions(conversion_id: str) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM llm_decisions WHERE conversion_id=? ORDER BY id ASC",
+            (conversion_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_llm_stats() -> dict:
+    with db() as conn:
+        total   = conn.execute("SELECT COUNT(*) FROM llm_decisions").fetchone()[0]
+        resolved = conn.execute(
+            "SELECT COUNT(*) FROM llm_decisions WHERE action='RESOLVED'"
+        ).fetchone()[0]
+        unres   = conn.execute(
+            "SELECT COUNT(*) FROM llm_decisions WHERE action='UNRESOLVABLE'"
+        ).fetchone()[0]
+        high    = conn.execute(
+            "SELECT COUNT(*) FROM llm_decisions WHERE confidence='HIGH'"
+        ).fetchone()[0]
+        medium  = conn.execute(
+            "SELECT COUNT(*) FROM llm_decisions WHERE confidence='MEDIUM'"
+        ).fetchone()[0]
+        low     = conn.execute(
+            "SELECT COUNT(*) FROM llm_decisions WHERE confidence='LOW'"
+        ).fetchone()[0]
+        convs   = conn.execute(
+            "SELECT COUNT(DISTINCT conversion_id) FROM llm_decisions"
+        ).fetchone()[0]
+    return {
+        "total_decisions":          total,
+        "resolved":                 resolved,
+        "unresolvable":             unres,
+        "conversions_with_llm":     convs,
+        "confidence_high":          high,
+        "confidence_medium":        medium,
+        "confidence_low":           low,
+    }

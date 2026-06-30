@@ -137,7 +137,7 @@ class ConditionEvaluator:
         # Operators that work even when field is absent
         if op == 'empty':
             return actual is None or actual.strip() == ''
-        if op == 'not_empty':
+        if op in ('not_empty', 'present_and_nonempty'):
             return actual is not None and actual.strip() != ''
 
         # Everything else requires a present value

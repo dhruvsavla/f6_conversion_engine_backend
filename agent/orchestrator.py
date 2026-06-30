@@ -18,7 +18,7 @@ async def convert_stream(d0_text: str) -> AsyncGenerator[Dict[str, Any], None]:
     # STEP 1 — Read rules
     yield step("reading_rules", "Reading rule files from rules/ folder", "running")
     try:
-        ruleset = rules_reader.load_all(str(RULES_DIR))
+        ruleset = rules_reader.load_all_from_db()
     except Exception as e:
         yield step("reading_rules", "Reading rule files from rules/ folder", "error", str(e))
         yield {"type": "error", "data": {"message": f"Failed to load rules: {e}"}}

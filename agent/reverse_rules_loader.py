@@ -44,7 +44,7 @@ class ReverseRulesLoader:
         Load forward rules for transaction_type and invert them.
         Returns: {segment_id: [reverse_rule_dict, ...]}
         """
-        ruleset   = rules_reader.load_all(str(RULES_DIR))
+        ruleset   = rules_reader.load_all_from_db()
         tx_rules  = ruleset.get_rules_for(transaction_type)
         segments  = tx_rules.get('segments', {})
 
@@ -113,6 +113,30 @@ class ReverseRulesLoader:
 
         logger.warning('Unknown forward action %r for %s — will carry', action, field_id)
         return {**base, 'reverse_action': 'carry', 'notes': f'Unknown action {action!r} — carried'}
+
+    def invert_from_cache(self, cache_rules: dict[str, list[dict]]) -> dict:
+        """
+        Build reverse ruleset from a pre-loaded forward rule dict.
+        Used by agents that already have rules from the shared cache.
+
+        Args:
+            cache_rules: { segment_id: [list of forward rule dicts] }
+
+        Returns:
+            { segment_id: [list of reverse rule dicts] }
+        """
+        reverse_ruleset: dict[str, list[dict]] = {}
+
+        for seg_id, rules in cache_rules.items():
+            for rule in rules:
+                reverse_rule = self._invert_rule(rule, seg_id)
+                if reverse_rule is None:
+                    continue
+                if seg_id not in reverse_ruleset:
+                    reverse_ruleset[seg_id] = []
+                reverse_ruleset[seg_id].append(reverse_rule)
+
+        return reverse_ruleset
 
     def _invert_transform(self, rule: dict, base: dict) -> dict:
         fwd = rule.get('transform', '').upper()

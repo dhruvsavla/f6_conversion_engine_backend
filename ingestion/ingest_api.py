@@ -19,15 +19,17 @@ import json
 import logging
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 
 # Load ANTHROPIC_API_KEY from .env before any anthropic import
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 
 from ingestion.extractor.chunker import Chunker
 from ingestion.extractor.llm_extractor import LLMExtractor
@@ -36,13 +38,61 @@ from ingestion.extractor.rule_compiler import RuleCompiler
 from ingestion.output.rule_writer import OUTPUT_DIR, FLAGGED_FILE, RuleWriter
 from ingestion.review.diff_reporter import DiffReporter
 from ingestion.validator.rule_validator import RuleValidator
+import db_ops
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/ingest', tags=['ingestion'])
 
+RESOLUTION_LOG = OUTPUT_DIR / 'resolution_log.json'
+
 # In-memory job store — same pattern as batch_processor.BATCH_JOBS
 INGEST_JOBS: dict[str, dict[str, Any]] = {}
+
+
+# ── Resolution helpers ────────────────────────────────────────────────────────
+
+def _read_flagged() -> list[dict]:
+    if not FLAGGED_FILE.exists():
+        return []
+    try:
+        data = json.loads(FLAGGED_FILE.read_text(encoding='utf-8'))
+        for i, entry in enumerate(data):
+            if '_id' not in entry:
+                entry['_id'] = str(uuid.uuid5(
+                    uuid.NAMESPACE_DNS,
+                    f"{entry.get('segment_id','')}-{entry.get('rule',{}).get('field_id','')}-{i}"
+                ))
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError) as e:
+        raise HTTPException(500, f'Failed to read flagged rules file: {e}')
+
+
+def _write_flagged(entries: list[dict]) -> None:
+    FLAGGED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FLAGGED_FILE.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding='utf-8')
+
+
+def _append_resolution_log(entry: dict) -> None:
+    existing = []
+    if RESOLUTION_LOG.exists():
+        try:
+            existing = json.loads(RESOLUTION_LOG.read_text())
+        except Exception:
+            pass
+    existing.append({**entry, 'resolved_at': datetime.now(timezone.utc).isoformat()})
+    RESOLUTION_LOG.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding='utf-8')
+
+
+def _find_entry(entries: list[dict], entry_id: str) -> tuple[int, Optional[dict]]:
+    for i, e in enumerate(entries):
+        if e.get('_id') == entry_id:
+            return i, e
+    return -1, None
+
+
+def _is_auto_fixable(issues: list[str]) -> bool:
+    return bool(issues) and all('WARN' in i and 'INVALID' not in i for i in issues)
 
 
 # ── Background task ───────────────────────────────────────────────────────────
@@ -260,12 +310,187 @@ async def promote():
 
 
 @router.get('/flagged')
-async def get_flagged():
-    """Return the contents of flagged_for_review.json if it exists."""
-    if not FLAGGED_FILE.exists():
-        return {'flagged': []}
+def get_flagged():
+    """Return all flagged rules enriched with current re-validation state."""
+    entries  = _read_flagged()
+    validator = RuleValidator()
+    enriched = []
+    for entry in entries:
+        rule      = entry.get('rule', {})
+        seg_id    = entry.get('segment_id', 'UNKNOWN')
+        issues    = entry.get('issues', [])
+        recheck   = validator.validate(rule, seg_id)
+        enriched.append({
+            **entry,
+            '_issue_count':    len(issues),
+            '_has_invalid':    any('INVALID' in i for i in issues),
+            '_current_status': recheck.status,
+            '_current_issues': recheck.issues,
+            '_auto_fixable':   _is_auto_fixable(issues),
+        })
+    return {
+        'flagged':         enriched,
+        'total':           len(enriched),
+        'invalid_count':   sum(1 for e in enriched if e['_has_invalid']),
+        'warn_only_count': sum(1 for e in enriched if not e['_has_invalid']),
+        'file_path':       str(FLAGGED_FILE),
+        'file_exists':     FLAGGED_FILE.exists(),
+    }
+
+
+@router.get('/flagged/count')
+def get_flagged_count():
+    """Lightweight count for sidebar badge — no validation re-run."""
+    entries = _read_flagged()
+    return {'total': len(entries), 'has_flagged': len(entries) > 0}
+
+
+@router.post('/resolve')
+def resolve_rule(body: dict = Body(...)):
+    """
+    Approve (re-validate + merge) or reject one flagged rule.
+    Returns 422 if approved rule still fails validation.
+    """
+    entry_id   = body.get('entry_id', '')
+    resolution = body.get('resolution', '')
+    if resolution not in ('approve', 'reject'):
+        raise HTTPException(400, 'resolution must be "approve" or "reject"')
+
+    entries = _read_flagged()
+    idx, entry = _find_entry(entries, entry_id)
+    if idx == -1:
+        raise HTTPException(404, f'Flagged rule "{entry_id}" not found')
+
+    if resolution == 'reject':
+        reason  = body.get('rejection_reason', 'No reason provided')
+        removed = entries.pop(idx)
+        _write_flagged(entries)
+        _append_resolution_log({
+            'resolution':       'reject',
+            'entry_id':         entry_id,
+            'field_id':         removed.get('rule', {}).get('field_id', ''),
+            'segment_id':       removed.get('segment_id', ''),
+            'rejection_reason': reason,
+        })
+        return {'status': 'rejected', 'message': 'Rule rejected and removed.', 'remaining': len(entries)}
+
+    # Approve flow
+    corrected_rule   = body.get('corrected_rule')
+    segment_id       = body.get('segment_id', entry.get('segment_id', ''))
+    transaction_type = body.get('transaction_type', 'RETAIL')
+
+    if corrected_rule is None:
+        raise HTTPException(400, 'corrected_rule is required for approve')
+
+    validator = RuleValidator()
+    result    = validator.validate(corrected_rule, segment_id)
+
+    if result.status == 'INVALID':
+        return JSONResponse(status_code=422, content={
+            'status':  'validation_failed',
+            'message': 'The corrected rule still has validation errors.',
+            'issues':  result.issues,
+        })
+
+    active_rs = db_ops.get_active_rule_set()
+    if not active_rs:
+        raise HTTPException(500, 'No active rule set in DB. Cannot merge.')
+
+    db_ops.insert_rules_bulk(active_rs['id'], [{
+        **corrected_rule,
+        'transaction_type': transaction_type,
+        'segment_id':       segment_id,
+    }])
+
+    removed = entries.pop(idx)
+    _write_flagged(entries)
+    _append_resolution_log({
+        'resolution':       'approve',
+        'entry_id':         entry_id,
+        'field_id':         corrected_rule.get('field_id', ''),
+        'segment_id':       segment_id,
+        'transaction_type': transaction_type,
+        'validator_status': result.status,
+        'issues_at_merge':  result.issues,
+    })
+
+    suffix = ' (merged with warnings)' if result.issues else ''
+    return {
+        'status':           'approved',
+        'message':          f'Rule {corrected_rule.get("field_id","")} merged into "{active_rs["name"]}"{suffix}.',
+        'validator_status': result.status,
+        'warnings':         result.issues,
+        'merged_into':      active_rs['name'],
+        'remaining':        len(entries),
+    }
+
+
+@router.post('/resolve-all')
+def resolve_all_auto(body: dict = Body(...)):
+    """Batch-approve all flagged rules that currently pass re-validation (WARN-only or VALID)."""
+    transaction_type = body.get('transaction_type', 'RETAIL')
+    entries   = _read_flagged()
+    validator = RuleValidator()
+    active_rs = db_ops.get_active_rule_set()
+    if not active_rs:
+        raise HTTPException(500, 'No active rule set in DB.')
+
+    approved  = []
+    remaining = []
+    for entry in entries:
+        rule      = entry.get('rule', {})
+        segment_id = entry.get('segment_id', 'UNKNOWN')
+        result    = validator.validate(rule, segment_id)
+        if result.status in ('VALID', 'WARN'):
+            db_ops.insert_rules_bulk(active_rs['id'], [{
+                **rule, 'transaction_type': transaction_type, 'segment_id': segment_id,
+            }])
+            approved.append(entry.get('_id', ''))
+            _append_resolution_log({
+                'resolution':       'approve_auto',
+                'entry_id':         entry.get('_id', ''),
+                'field_id':         rule.get('field_id', ''),
+                'segment_id':       segment_id,
+                'transaction_type': transaction_type,
+                'validator_status': result.status,
+            })
+        else:
+            remaining.append(entry)
+
+    _write_flagged(remaining)
+    return {
+        'status':    'batch_complete',
+        'approved':  len(approved),
+        'remaining': len(remaining),
+        'message':   f'Auto-approved {len(approved)} rule(s). {len(remaining)} still need manual review.',
+    }
+
+
+@router.get('/history')
+def get_resolution_history(limit: int = 50):
+    """Return past approve/reject decisions from resolution_log.json."""
+    if not RESOLUTION_LOG.exists():
+        return {'history': [], 'total': 0}
     try:
-        data = json.loads(FLAGGED_FILE.read_text(encoding='utf-8'))
-        return {'flagged': data}
-    except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(500, f'Could not read flagged file: {e}')
+        history = json.loads(RESOLUTION_LOG.read_text())
+        history.sort(key=lambda x: x.get('resolved_at', ''), reverse=True)
+        return {'history': history[:limit], 'total': len(history)}
+    except Exception as e:
+        raise HTTPException(500, f'Failed to read resolution log: {e}')
+
+
+@router.delete('/flagged')
+def clear_flagged(confirm: str = ''):
+    """Clear all flagged rules. Requires ?confirm=yes to prevent accidents."""
+    if confirm != 'yes':
+        raise HTTPException(400, 'Pass ?confirm=yes to clear all flagged rules')
+    entries = _read_flagged()
+    for entry in entries:
+        _append_resolution_log({
+            'resolution': 'cleared',
+            'entry_id':   entry.get('_id', ''),
+            'field_id':   entry.get('rule', {}).get('field_id', ''),
+            'segment_id': entry.get('segment_id', ''),
+        })
+    _write_flagged([])
+    return {'status': 'cleared', 'removed': len(entries)}

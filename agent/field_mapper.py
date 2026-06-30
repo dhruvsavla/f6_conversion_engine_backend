@@ -71,26 +71,30 @@ class FieldMapper:
             raw_index=parsed_seg.raw_index,
         )
 
-        d0_field_map: dict[str, ParsedField] = {
-            f.field_id: f for f in parsed_seg.fields
-        }
+        # Build a multi-occurrence map so repeating fields (e.g. CMP ingredients)
+        # are all preserved rather than the last occurrence overwriting earlier ones.
+        d0_field_map: dict[str, list[ParsedField]] = {}
+        for f in parsed_seg.fields:
+            d0_field_map.setdefault(f.field_id, []).append(f)
+
         handled_field_ids: set[str] = set()
 
         for rule in seg_rules:
-            result = self._apply_rule(rule, d0_field_map, parsed_seg, tx, findings)
-            if result is None:
-                continue
-
             field_id = rule.get('field_id', '')
             handled_field_ids.add(field_id)
+            d0_fields = d0_field_map.get(field_id, [])
 
-            change_type = result.change_type
-            if change_type == 'carried': mapped.carried.append(result)
-            elif change_type == 'transformed': mapped.transformed.append(result)
-            elif change_type == 'added': mapped.added.append(result)
-            elif change_type == 'removed': mapped.removed.append(result)
-            elif change_type == 'modified': mapped.modified.append(result)
-            elif change_type == 'missing': mapped.missing.append(result)
+            if not d0_fields:
+                # Field absent from D.0 — let _apply_rule handle add/warn/missing logic
+                result = self._apply_rule(rule, None, parsed_seg, tx, findings)
+                if result is not None:
+                    self._bucket(mapped, result)
+            else:
+                # Apply the rule once per occurrence of this field (handles CMP ingredients)
+                for d0_field in d0_fields:
+                    result = self._apply_rule(rule, d0_field, parsed_seg, tx, findings)
+                    if result is not None:
+                        self._bucket(mapped, result)
 
         for d0_field in parsed_seg.fields:
             if d0_field.field_id not in handled_field_ids:
@@ -103,6 +107,7 @@ class FieldMapper:
                     rule_applied='IMPLICIT_CARRY',
                     notes='No rule defined for this field. Carried unchanged.',
                     occurrence=parsed_seg.occurrence,
+                    raw_index=d0_field.raw_index,
                 ))
 
         return mapped
@@ -110,12 +115,12 @@ class FieldMapper:
     def _apply_rule(
         self,
         rule: dict,
-        d0_field_map: dict[str, ParsedField],
+        d0_field: Optional[ParsedField],
         parsed_seg: ParsedSegment,
         tx: ParsedTransaction,
-        findings: list[dict] # <--- Passed from _map_segment
+        findings: list[dict]
     ) -> Optional[MappedField]:
-        
+
         field_id    = rule.get('field_id', '')
         field_name  = rule.get('field_name', field_id)
         action      = rule.get('action', 'carry')
@@ -142,18 +147,15 @@ class FieldMapper:
                 condition_passed, condition_expr = _evaluator.evaluate(if_block, tx) # <--- FIXED
             
             if not condition_passed:
-                d0_field = d0_field_map.get(field_id)
                 if d0_field:
                     return MappedField(
                         field_id=field_id, field_name=field_name, change_type='carried',
                         old_value=d0_field.value, new_value=d0_field.value, rule_applied='CONDITION_NOT_MET_IMPLICIT_CARRY',
                         notes=f'Condition not satisfied ({condition_expr}). Carried.', occurrence=occurrence,
+                        raw_index=d0_field.raw_index,
                         condition_evaluated=True, condition_passed=False, condition_expression=condition_expr,
                     )
                 return None
-
-        # Step 3: Apply the concrete action
-        d0_field = d0_field_map.get(field_id)
 
         # ── CARRY ─────────────────────────────────────────────────────────────
         if action == 'carry':
@@ -179,26 +181,55 @@ class FieldMapper:
                 field_id=field_id, field_name=field_name, change_type='carried',
                 old_value=d0_field.value, new_value=d0_field.value, rule_applied='CARRY',
                 notes=rule.get('notes', ''), occurrence=occurrence,
+                raw_index=d0_field.raw_index,
                 condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
             )
 
         # ── TRANSFORM ─────────────────────────────────────────────────────────
         if action == 'transform':
+            transform_name = rule.get("transform", "")
+
+            # COPY_FROM_FIELD: read value from another segment/field in the transaction.
+            # source_field format: "SEGMENT_ID.field_id" e.g. "CLM.423-DN".
+            # Handled before d0_field guard because the target field may not exist in D.0.
+            if transform_name == 'COPY_FROM_FIELD':
+                source = rule.get('source_field', '')
+                if source and '.' in source:
+                    seg_id, _, src_fid = source.partition('.')
+                    src_value = tx.get_field(seg_id.strip(), src_fid.strip())
+                    if src_value is not None and src_value.strip():
+                        return MappedField(
+                            field_id=field_id, field_name=field_name,
+                            change_type='transformed',
+                            old_value='', new_value=src_value.strip(),
+                            rule_applied=f'COPY_FROM_FIELD:{source}',
+                            notes=rule.get('notes', ''), occurrence=occurrence,
+                            condition_evaluated=condition_evaluated,
+                            condition_passed=condition_passed,
+                            condition_expression=condition_expr,
+                        )
+                else:
+                    logger.warning(
+                        'COPY_FROM_FIELD on %s has no valid source_field (got: %r)',
+                        field_id, source,
+                    )
+                return None  # source absent — cases default handles the warning
+
             if d0_field is None:
                 return None
-            
-            transform_name = rule.get("transform", "")
+
             params = dict(rule.get("params", {}))
             if "value" in rule:
                 params["value"] = rule["value"]
-            
+
             # Using the apply_transform imported at the top of your file
             new_val = apply_transform(d0_field.value, transform_name, params)
-            
+
             return MappedField(
                 field_id=field_id, field_name=field_name, change_type='transformed',
                 old_value=d0_field.value, new_value=new_val, rule_applied=transform_name,
                 notes=rule.get('notes', ''), occurrence=occurrence,
+                raw_index=d0_field.raw_index,
                 condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
             )
 
@@ -215,6 +246,16 @@ class FieldMapper:
                     "segment": parsed_seg.segment_id,
                     "field_id": field_id,
                 })
+            # If the field already exists in D.0, keep it in-place (carry) so it
+            # retains its original position in the F6 output.
+            if d0_field is not None:
+                return MappedField(
+                    field_id=field_id, field_name=field_name, change_type='carried',
+                    old_value=d0_field.value, new_value=actual_value, rule_applied='ADD',
+                    notes=rule.get('notes', ''), occurrence=occurrence,
+                    raw_index=d0_field.raw_index,
+                    condition_evaluated=condition_evaluated, condition_passed=condition_passed, condition_expression=condition_expr,
+                )
             return MappedField(
                 field_id=field_id, field_name=field_name, change_type='added',
                 old_value='', new_value=actual_value, rule_applied='ADD',
@@ -231,7 +272,7 @@ class FieldMapper:
                 field_id=field_id, field_name=field_name,
                 change_type='removed', old_value=d0_field.value, new_value='',
                 rule_applied='REMOVE', notes=rule.get('notes', 'Field deprecated in F6.'),
-                occurrence=occurrence,
+                occurrence=occurrence, raw_index=d0_field.raw_index,
                 condition_evaluated=condition_evaluated, condition_passed=condition_passed,
                 condition_expression=condition_expr,
             )
@@ -249,7 +290,7 @@ class FieldMapper:
                 field_id=field_id, field_name=field_name,
                 change_type=ct, old_value=d0_field.value, new_value=new_val,
                 rule_applied='MAP_CODE', notes=rule.get('notes', ''),
-                occurrence=occurrence,
+                occurrence=occurrence, raw_index=d0_field.raw_index,
                 condition_evaluated=condition_evaluated, condition_passed=condition_passed,
                 condition_expression=condition_expr,
             )

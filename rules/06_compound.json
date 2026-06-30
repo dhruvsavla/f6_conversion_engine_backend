@@ -1,121 +1,152 @@
 {
   "transaction_type": "COMPOUND",
-  "description": "Compound prescription claim — multi-ingredient preparation",
-  "detection": {
-    "transaction_code": ["B1", "01"],
-    "compound_code": ["2"]
+  "_meta": {
+    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpq2p8ygw9_ACME_PBM_F6_Implementation_Guide.pdf",
+    "extracted_at": "2026-06-28T07:31:30.984158Z",
+    "extraction_warnings": []
   },
   "segments": {
-    "HDR": [
-      { "field_id": "101-A1", "field_name": "BIN / IIN Number", "action": "transform", "transform": "ZERO_PAD_LEFT", "params": { "length": 8 }, "notes": "6 byte BIN carried as an 8 byte IIN by left padding." },
-      { "field_id": "102-A2", "field_name": "Version / Release Number", "action": "transform", "transform": "SET_VALUE", "value": "F6", "notes": "Literal value moves between D0 and F6." },
-      { "field_id": "103-A3", "field_name": "Transaction Code", "action": "carry" },
-      { "field_id": "104-A4", "field_name": "Processor Control Number", "action": "carry" },
-      { "field_id": "109-A9", "field_name": "Transaction Count", "action": "carry" },
-      { "field_id": "201-B1", "field_name": "Service Provider ID", "action": "carry" },
-      { "field_id": "202-B2", "field_name": "Service Provider ID Qualifier", "action": "carry" },
-      { "field_id": "401-D1", "field_name": "Date of Service", "action": "carry" }
-    ],
-    "INS": [
-      { "field_id": "302-C2", "field_name": "Cardholder ID", "action": "carry" },
-      { "field_id": "301-C1", "field_name": "Group ID", "action": "carry" },
-      { "field_id": "306-C6", "field_name": "Patient Relationship Code", "action": "carry" },
-      {
-        "field_id": "367-2N",
-        "field_name": "Medicaid Agency Number",
-        "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "BNI",
-        "warn_severity": "WARN",
-        "warn_message": "Medicaid Agency Number (367-2N) is new in F6. Not present in D.0. Confirm value with payer.",
-        "notes": "New eligibility field, populate from supplier source on billing."
-      },
-      {
-        "field_id": "990-MG",
-        "field_name": "Other Payer BIN (legacy position)",
-        "action": "remove",
-        "notes": "Carried in the restructured COB segment under F6."
-      }
-    ],
-    "PAT": [
-      { "field_id": "304-C4", "field_name": "Date of Birth", "action": "carry" },
-      { "field_id": "305-C5", "field_name": "Patient Gender Code", "action": "modify", "notes": "Expanded code set under F6, validated against the new value list." },
-      { "field_id": "310-CA", "field_name": "Patient First Name", "action": "carry" },
-      { "field_id": "311-CB", "field_name": "Patient Last Name", "action": "carry" }
-    ],
-    "CLM": [
-      { "field_id": "455-EM", "field_name": "Rx / Service Reference Number Qualifier", "action": "carry" },
-      { "field_id": "402-D2", "field_name": "Rx / Service Reference Number", "action": "carry" },
-      { "field_id": "436-E1", "field_name": "Product / Service ID Qualifier", "action": "carry" },
-      { "field_id": "407-D7", "field_name": "Product / Service ID", "action": "carry" },
-      { "field_id": "442-E7", "field_name": "Quantity Dispensed", "action": "carry" },
-      { "field_id": "403-D3", "field_name": "Fill Number", "action": "carry" },
-      { "field_id": "405-D5", "field_name": "Days Supply", "action": "carry" },
-      { "field_id": "406-D6", "field_name": "Compound Code", "action": "carry" },
-      { "field_id": "408-D8", "field_name": "Dispense As Written Code", "action": "carry" },
-      { "field_id": "414-DE", "field_name": "Date Prescription Written", "action": "carry" },
-      { "field_id": "419-DJ", "field_name": "Prescription Origin Code", "action": "modify", "notes": "Expanded origin code set under F6 (electronic prescribing values added)." },
-      {
-        "field_id": "995-E2",
-        "field_name": "Specialty Pharmacy Indicator",
-        "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "SP",
-        "warn_severity": "WARN",
-        "warn_message": "Specialty Pharmacy Indicator (995-E2) is empty. Confirm supplier source mapping.",
-        "notes": "New field supporting specialty and high cost therapy analytics."
-      },
-      {
-        "field_id": "996-E3",
-        "field_name": "REMS Authorization Number",
-        "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "RM",
-        "warn_severity": "WARN",
-        "warn_message": "REMS Authorization Number (996-E3) is empty. Confirm whether product is restricted.",
-        "notes": "New field for restricted distribution products."
-      }
-    ],
     "CMP": [
-      { "field_id": "450-EF", "field_name": "Compound Dosage Form Description Code", "action": "carry" },
-      { "field_id": "451-EG", "field_name": "Compound Dispensing Unit Form Indicator", "action": "carry" },
-      { "field_id": "447-EC", "field_name": "Compound Ingredient Component Count", "action": "modify", "notes": "Expanded ingredient handling under F6." }
-    ],
-    "PRE": [
-      { "field_id": "466-EZ", "field_name": "Prescriber ID Qualifier", "action": "carry" },
-      { "field_id": "411-DB", "field_name": "Prescriber ID", "action": "carry" },
-      { "field_id": "427-DR", "field_name": "Prescriber Last Name", "action": "carry" },
       {
-        "field_id": "364-2J",
-        "field_name": "Prescriber First Name",
-        "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "PF",
-        "warn_severity": "WARN",
-        "warn_message": "Prescriber First Name (364-2J) is empty. Confirm supplier source for traceability.",
-        "notes": "Newly captured for controlled substance and prescriber traceability."
-      }
-    ],
-    "PRI": [
-      { "field_id": "409-D9", "field_name": "Ingredient Cost Submitted", "action": "carry" },
-      { "field_id": "412-DC", "field_name": "Dispensing Fee Submitted", "action": "carry" },
-      { "field_id": "426-DQ", "field_name": "Usual and Customary Charge", "action": "carry" },
-      { "field_id": "430-DU", "field_name": "Gross Amount Due", "action": "carry" },
-      { "field_id": "423-DN", "field_name": "Basis of Cost Determination", "action": "carry" },
+        "field_id": "450-EF",
+        "field_name": "Compound Dosage Form Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Carry unchanged per CMP segment table; required when CMP segment is present.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
       {
-        "field_id": "478-H7",
-        "field_name": "Real Time Benefit Reference",
-        "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "RT",
-        "warn_severity": "WARN",
-        "warn_message": "Real Time Benefit Reference (478-H7) is empty. Confirm supplier source.",
-        "notes": "New field supporting real time benefit and formulary communication."
+        "field_id": "451-EG",
+        "field_name": "Compound Dispensing Unit Form Indicator",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Carry unchanged per CMP segment table; required when CMP segment is present.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "447-EC",
+        "field_name": "Compound Ingredient Component Count",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Carry unchanged per CMP segment table; total number of ingredients max 25.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "488-RE",
+        "field_name": "Compound Product ID Qualifier",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Carry unchanged per CMP segment table; NDC qualifier per ingredient.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "489-TE",
+        "field_name": "Compound Product ID",
+        "action": "transform",
+        "mandatory_f6": true,
+        "notes": "NDC of each ingredient; hyphens must be removed per CMP segment rules.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        },
+        "transform": "REMOVE_HYPHENS"
+      },
+      {
+        "field_id": "448-ED",
+        "field_name": "Compound Ingredient Quantity",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Carry unchanged per CMP segment table; quantity per ingredient.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "449-EE",
+        "field_name": "Compound Ingredient Drug Cost",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Carry unchanged per CMP segment table; cost per ingredient in cents.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "490-UE",
+        "field_name": "Compound Ingredient Basis of Cost",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Optional field; carry unchanged per CMP segment table; describes how cost was determined.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "362-2G",
+        "field_name": "Compound Ingredient Modifier Code Count",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Number of modifier codes for this ingredient. Carry unchanged.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
+      },
+      {
+        "field_id": "363-2H",
+        "field_name": "Compound Ingredient Modifier Code",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Modifier code for this ingredient (e.g. GF, UD). Carry unchanged.",
+        "condition": {
+          "if": {
+            "field": "CLM.406-D6",
+            "operator": "eq",
+            "value": "2"
+          }
+        }
       }
     ]
   }

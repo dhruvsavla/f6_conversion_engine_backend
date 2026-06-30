@@ -5,124 +5,77 @@
     "field_name": "Prescriber ID (NPI)",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "NPI is mandatory in all F6 claims; in D.0 DEA alone was accepted but F6 requires NPI always.",
+    "notes": "NPI is mandatory in all F6 claims; DEA alone was accepted in D.0 but is no longer sufficient.",
     "warn_if_empty": true,
     "warn_code": "NPI",
     "warn_severity": "ERROR",
-    "warn_message": "Prescriber NPI (411-DB) is absent. Claim cannot be converted to F6 without an NPI."
+    "warn_message": "Prescriber NPI (411-DB) is absent. Claim cannot be converted to F6 without a valid 10-digit NPI."
   },
   {
     "field_id": "466-EZ",
     "field_name": "Prescriber ID Qualifier",
-    "action": "cases",
+    "action": "carry",
     "mandatory_f6": true,
-    "notes": "Must be 01 when 411-DB contains an NPI; valid values are 01=NPI, 12=DEA Number, 13=State License Number.",
-    "cases": [
-      {
-        "when": {
-          "field": "PRE.411-DB",
-          "operator": "not_empty",
-          "value": null
-        },
-        "then": {
-          "action": "transform",
-          "transform": "SET_VALUE",
-          "value": "01"
-        }
-      },
-      {
-        "when": "default",
-        "then": {
-          "action": "carry"
-        }
+    "notes": "Must be 01 when 411-DB contains an NPI; carry unchanged from D.0.",
+    "condition": {
+      "if": {
+        "field": "PRE.411-DB",
+        "operator": "not_empty",
+        "value": null
       }
-    ]
+    }
   },
   {
     "field_id": "427-DR",
     "field_name": "Prescriber Last Name",
     "action": "carry",
     "mandatory_f6": false,
-    "notes": "Carry unchanged if present; optional field."
+    "notes": "Optional field; carry unchanged if present in D.0."
   },
   {
     "field_id": "364-2J",
     "field_name": "Prescriber First Name",
     "action": "add",
     "mandatory_f6": false,
-    "notes": "New in F6, not present in D.0; append to end of PRE segment with empty value if not available from D.0 source.",
+    "notes": "New in F6; not present in D.0. Append to PRE segment with empty value if not available; emit WARN if absent.",
     "d0_present": false,
     "default_value": "",
     "warn_if_empty": true,
     "warn_code": "PF",
     "warn_severity": "WARN",
-    "warn_message": "Prescriber First Name (364-2J) is absent. Confirm availability from supplier source for traceability."
+    "warn_message": "Prescriber First Name (364-2J) is absent. Recommended for traceability; confirm supplier source."
   },
   {
     "field_id": "498-PY",
     "field_name": "Prescriber Phone",
     "action": "carry",
     "mandatory_f6": false,
-    "notes": "Carry unchanged if present; optional field."
+    "notes": "Optional field; carry unchanged if present in D.0."
   },
   {
     "field_id": "441-E6",
     "field_name": "Prescriber DEA Number",
-    "action": "cases",
+    "action": "carry",
     "mandatory_f6": false,
-    "notes": "Required only when the prescription is for a controlled substance (Schedule II-V); emit ERROR if absent on controlled substance claims.",
-    "cases": [
-      {
-        "when": {
-          "logic": "AND",
-          "conditions": [
-            {
-              "field": "CLM.407-D7",
-              "operator": "in",
-              "value": ["2", "3", "4", "5"]
-            },
-            {
-              "field": "PRE.441-E6",
-              "operator": "empty",
-              "value": null
-            }
-          ]
-        },
-        "then": {
-          "action": "add",
-          "default_value": "",
-          "warn_if_empty": true,
-          "warn_code": "DEA",
-          "warn_severity": "ERROR",
-          "warn_message": "Prescriber DEA Number (441-E6) is required for controlled substance (Schedule II-V) claims but is absent."
-        }
-      },
-      {
-        "when": {
-          "field": "PRE.441-E6",
-          "operator": "not_empty",
-          "value": null
-        },
-        "then": {
-          "action": "carry"
-        }
-      },
-      {
-        "when": "default",
-        "then": {
-          "action": "carry"
-        }
+    "notes": "Required only when the prescription is for a controlled substance (Schedule II-V); emit ERROR if absent on such claims.",
+    "warn_if_empty": true,
+    "warn_condition": {
+      "if": {
+        "field": "CLM.407-D7",
+        "operator": "in",
+        "value": ["2", "3", "4", "5"]
       }
-    ],
-    "extraction_confidence": "LOW",
-    "notes": "Controlled substance determination inferred from DAW code or NDC per guide text; Schedule II-V mapping to a specific field (e.g. CLM.407-D7) is an assumption — confirm exact source field for controlled substance indicator."
+    },
+    "warn_code": "DEA",
+    "warn_severity": "ERROR",
+    "warn_message": "Prescriber DEA Number (441-E6) is absent for a controlled substance claim (Schedule II-V). DEA is required in this context."
   },
   {
     "field_id": "835-5C",
     "field_name": "Prescriber Specialty",
     "action": "add",
     "mandatory_f6": false,
-    "notes": "New in F6, not present in D.0; optional field, append to PRE segment if value is available.",
+    "notes": "New in F6; not present in D.0. Optional — append to PRE segment if value is available.",
     "d0_present": false,
     "default_value": ""
   }

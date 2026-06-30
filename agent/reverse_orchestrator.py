@@ -49,7 +49,7 @@ class ReverseOrchestrator:
         step('reading_rules', 'Reading reverse rule files from rules/ folder', 'running')
         try:
             from . import rules_reader
-            rs = rules_reader.load_all(str(RULES_DIR))
+            rs = rules_reader.load_all_from_db()
             steps[-1].update(status='complete',
                 detail=f'Loaded {len(rs.files)} rule files, {rs.total_field_rules} forward field rules')
         except Exception as e:

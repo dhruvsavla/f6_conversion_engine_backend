@@ -1,0 +1,18 @@
+[
+  {
+    "resolution": "reject",
+    "entry_id": "d0f3a9b6-d587-5686-863d-c6998931249c",
+    "field_id": "441-E6",
+    "segment_id": "PRE",
+    "rejection_reason": "reject",
+    "resolved_at": "2026-06-28T07:04:44.542254+00:00"
+  },
+  {
+    "resolution": "reject",
+    "entry_id": "d884d281-4fe0-5775-baba-5b8f365d5d55",
+    "field_id": "414-DE",
+    "segment_id": "CLM",
+    "rejection_reason": "reject",
+    "resolved_at": "2026-06-28T07:04:52.979594+00:00"
+  }
+]

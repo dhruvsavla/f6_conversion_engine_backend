@@ -46,6 +46,13 @@ SEGMENT_ALIASES: dict[str, str] = {
     'H1': 'DOC',
 }
 
+# CMP repeating ingredient fields — 488-RE marks the start of each ingredient group.
+# These field IDs repeat once per ingredient (up to 25, controlled by 447-EC).
+_CMP_INGREDIENT_FIELDS = frozenset({
+    '488-RE', '489-TE', '448-ED', '449-EE', '490-UE', '362-2G', '363-2H',
+})
+_CMP_GROUP_MARKER = '488-RE'
+
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
 
@@ -64,6 +71,7 @@ class ParsedField:
     field_id: str
     value: str          # raw value — do NOT strip trailing spaces (some values are intentionally padded)
     raw_index: int = 0  # 0-based ordinal within its segment
+    occurrence: int = 1 # ingredient group occurrence for CMP repeating fields (1-based)
 
 
 @dataclass
@@ -264,7 +272,25 @@ class SegmentParser:
             if ferr:
                 seg.parse_errors.append(ferr)
 
+        if normalized_id == 'CMP':
+            self._assign_cmp_ingredient_occurrences(seg)
+
         return seg, None
+
+    @staticmethod
+    def _assign_cmp_ingredient_occurrences(seg: ParsedSegment) -> None:
+        """
+        Tag CMP ingredient fields with their 1-based ingredient group occurrence.
+        488-RE (Compound Product ID Qualifier) marks the start of each group.
+        Header fields (450-EF, 451-EG, 447-EC) are not ingredient fields and
+        retain the default occurrence=1.
+        """
+        ingredient_occ = 0
+        for f in seg.fields:
+            if f.field_id == _CMP_GROUP_MARKER:
+                ingredient_occ += 1
+            if f.field_id in _CMP_INGREDIENT_FIELDS:
+                f.occurrence = ingredient_occ
 
     def _parse_hex_field(
         self, group: str, segment_id: str, fi: int
@@ -365,6 +391,9 @@ class SegmentParser:
 
             if field_id:
                 seg.fields.append(ParsedField(field_id=field_id, value=value, raw_index=fi))
+
+        if normalized_id == 'CMP':
+            self._assign_cmp_ingredient_occurrences(seg)
 
         return seg, None
 

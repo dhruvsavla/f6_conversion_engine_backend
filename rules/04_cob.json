@@ -1,25 +1,89 @@
 {
   "transaction_type": "COB",
-  "description": "Coordination of benefits — secondary payer claim",
+  "description": "Coordination of benefits \u2014 secondary payer claim",
   "detection": {
-    "transaction_code": ["B1", "01"],
-    "segment_present": ["COB"]
+    "transaction_code": [
+      "B1",
+      "01"
+    ],
+    "segment_present": [
+      "COB"
+    ]
   },
   "segments": {
     "HDR": [
-      { "field_id": "101-A1", "field_name": "BIN / IIN Number", "action": "transform", "transform": "ZERO_PAD_LEFT", "params": { "length": 8 }, "notes": "6 byte BIN carried as an 8 byte IIN by left padding." },
-      { "field_id": "102-A2", "field_name": "Version / Release Number", "action": "transform", "transform": "SET_VALUE", "value": "F6", "notes": "Literal value moves between D0 and F6." },
-      { "field_id": "103-A3", "field_name": "Transaction Code", "action": "carry" },
-      { "field_id": "104-A4", "field_name": "Processor Control Number", "action": "carry" },
-      { "field_id": "109-A9", "field_name": "Transaction Count", "action": "carry" },
-      { "field_id": "201-B1", "field_name": "Service Provider ID", "action": "carry" },
-      { "field_id": "202-B2", "field_name": "Service Provider ID Qualifier", "action": "carry" },
-      { "field_id": "401-D1", "field_name": "Date of Service", "action": "carry" }
+      {
+        "field_id": "101-A1",
+        "field_name": "BIN / IIN Number",
+        "action": "transform",
+        "transform": "ZERO_PAD_LEFT",
+        "params": {
+          "length": 8
+        },
+        "notes": "6 byte BIN carried as an 8 byte IIN by left padding."
+      },
+      {
+        "field_id": "102-A2",
+        "field_name": "Version / Release Number",
+        "action": "transform",
+        "transform": "SET_VALUE",
+        "value": "F6",
+        "notes": "Literal value moves between D0 and F6."
+      },
+      {
+        "field_id": "103-A3",
+        "field_name": "Transaction Code",
+        "action": "carry"
+      },
+      {
+        "field_id": "104-A4",
+        "field_name": "Processor Control Number",
+        "action": "carry"
+      },
+      {
+        "field_id": "109-A9",
+        "field_name": "Transaction Count",
+        "action": "carry"
+      },
+      {
+        "field_id": "201-B1",
+        "field_name": "Service Provider ID",
+        "action": "carry"
+      },
+      {
+        "field_id": "202-B2",
+        "field_name": "Service Provider ID Qualifier",
+        "action": "carry"
+      },
+      {
+        "field_id": "401-D1",
+        "field_name": "Date of Service",
+        "action": "carry"
+      }
     ],
     "INS": [
-      { "field_id": "302-C2", "field_name": "Cardholder ID", "action": "carry" },
-      { "field_id": "301-C1", "field_name": "Group ID", "action": "carry" },
-      { "field_id": "306-C6", "field_name": "Patient Relationship Code", "action": "carry" },
+      {
+        "field_id": "302-C2",
+        "field_name": "Cardholder ID",
+        "action": "carry"
+      },
+      {
+        "field_id": "301-C1",
+        "field_name": "Group ID",
+        "action": "carry"
+      },
+      {
+        "field_id": "306-C6",
+        "field_name": "Patient Relationship Code",
+        "action": "carry"
+      },
+      {
+        "field_id": "308-C8",
+        "field_name": "Other Coverage Code",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "0=Not specified, 1=No other coverage, 2=Other coverage exists (payment collected), 3=Other coverage exists (payment not collected). Carry unchanged."
+      },
       {
         "field_id": "367-2N",
         "field_name": "Medicaid Agency Number",
@@ -39,23 +103,85 @@
       }
     ],
     "PAT": [
-      { "field_id": "304-C4", "field_name": "Date of Birth", "action": "carry" },
-      { "field_id": "305-C5", "field_name": "Patient Gender Code", "action": "modify", "notes": "Expanded code set under F6, validated against the new value list." },
-      { "field_id": "310-CA", "field_name": "Patient First Name", "action": "carry" },
-      { "field_id": "311-CB", "field_name": "Patient Last Name", "action": "carry" }
+      {
+        "field_id": "304-C4",
+        "field_name": "Date of Birth",
+        "action": "carry"
+      },
+      {
+        "field_id": "305-C5",
+        "field_name": "Patient Gender Code",
+        "action": "modify",
+        "notes": "Expanded code set under F6, validated against the new value list."
+      },
+      {
+        "field_id": "310-CA",
+        "field_name": "Patient First Name",
+        "action": "carry"
+      },
+      {
+        "field_id": "311-CB",
+        "field_name": "Patient Last Name",
+        "action": "carry"
+      }
     ],
     "CLM": [
-      { "field_id": "455-EM", "field_name": "Rx / Service Reference Number Qualifier", "action": "carry" },
-      { "field_id": "402-D2", "field_name": "Rx / Service Reference Number", "action": "carry" },
-      { "field_id": "436-E1", "field_name": "Product / Service ID Qualifier", "action": "carry" },
-      { "field_id": "407-D7", "field_name": "Product / Service ID", "action": "carry" },
-      { "field_id": "442-E7", "field_name": "Quantity Dispensed", "action": "carry" },
-      { "field_id": "403-D3", "field_name": "Fill Number", "action": "carry" },
-      { "field_id": "405-D5", "field_name": "Days Supply", "action": "carry" },
-      { "field_id": "406-D6", "field_name": "Compound Code", "action": "carry" },
-      { "field_id": "408-D8", "field_name": "Dispense As Written Code", "action": "carry" },
-      { "field_id": "414-DE", "field_name": "Date Prescription Written", "action": "carry" },
-      { "field_id": "419-DJ", "field_name": "Prescription Origin Code", "action": "modify", "notes": "Expanded origin code set under F6 (electronic prescribing values added)." },
+      {
+        "field_id": "455-EM",
+        "field_name": "Rx / Service Reference Number Qualifier",
+        "action": "carry"
+      },
+      {
+        "field_id": "402-D2",
+        "field_name": "Rx / Service Reference Number",
+        "action": "carry"
+      },
+      {
+        "field_id": "436-E1",
+        "field_name": "Product / Service ID Qualifier",
+        "action": "carry"
+      },
+      {
+        "field_id": "407-D7",
+        "field_name": "Product / Service ID",
+        "action": "carry"
+      },
+      {
+        "field_id": "442-E7",
+        "field_name": "Quantity Dispensed",
+        "action": "carry"
+      },
+      {
+        "field_id": "403-D3",
+        "field_name": "Fill Number",
+        "action": "carry"
+      },
+      {
+        "field_id": "405-D5",
+        "field_name": "Days Supply",
+        "action": "carry"
+      },
+      {
+        "field_id": "406-D6",
+        "field_name": "Compound Code",
+        "action": "carry"
+      },
+      {
+        "field_id": "408-D8",
+        "field_name": "Dispense As Written Code",
+        "action": "carry"
+      },
+      {
+        "field_id": "414-DE",
+        "field_name": "Date Prescription Written",
+        "action": "carry"
+      },
+      {
+        "field_id": "419-DJ",
+        "field_name": "Prescription Origin Code",
+        "action": "modify",
+        "notes": "Expanded origin code set under F6 (electronic prescribing values added)."
+      },
       {
         "field_id": "995-E2",
         "field_name": "Specialty Pharmacy Indicator",
@@ -80,20 +206,57 @@
       }
     ],
     "COB": [
-      { "field_id": "337-4C", "field_name": "COB / Other Payments Count", "action": "carry" },
-      { "field_id": "338-5C", "field_name": "Other Payer Coverage Type", "action": "carry" },
-      { "field_id": "339-6C", "field_name": "Other Payer ID Qualifier", "action": "modify", "notes": "Expanded qualifier set under the restructured F6 COB model." },
-      { "field_id": "340-7C", "field_name": "Other Payer ID", "action": "carry" },
-      { "field_id": "443-E8", "field_name": "Other Payer Date", "action": "carry" },
-      { "field_id": "341-HB", "field_name": "Other Payer Amount Paid Count", "action": "carry" },
-      { "field_id": "342-HC", "field_name": "Other Payer Amount Paid Qualifier", "action": "carry" },
-      { "field_id": "431-DV", "field_name": "Other Payer Amount Paid", "action": "carry" },
+      {
+        "field_id": "337-4C",
+        "field_name": "COB / Other Payments Count",
+        "action": "carry"
+      },
+      {
+        "field_id": "338-5C",
+        "field_name": "Other Payer Coverage Type",
+        "action": "carry"
+      },
+      {
+        "field_id": "339-6C",
+        "field_name": "Other Payer ID Qualifier",
+        "action": "modify",
+        "notes": "Expanded qualifier set under the restructured F6 COB model."
+      },
+      {
+        "field_id": "340-7C",
+        "field_name": "Other Payer ID",
+        "action": "carry"
+      },
+      {
+        "field_id": "443-E8",
+        "field_name": "Other Payer Date",
+        "action": "carry"
+      },
+      {
+        "field_id": "341-HB",
+        "field_name": "Other Payer Amount Paid Count",
+        "action": "carry"
+      },
+      {
+        "field_id": "342-HC",
+        "field_name": "Other Payer Amount Paid Qualifier",
+        "action": "carry"
+      },
+      {
+        "field_id": "431-DV",
+        "field_name": "Other Payer Amount Paid",
+        "action": "carry"
+      },
       {
         "field_id": "392-MU",
         "field_name": "Other Coverage Code / Benefit Stage Qualifier",
         "action": "carry",
         "warn_condition": {
-          "if": { "field": "INS.694-ZJ", "operator": "eq", "value": "Y" },
+          "if": {
+            "field": "INS.694-ZJ",
+            "operator": "eq",
+            "value": "Y"
+          },
           "warn_code": "BS",
           "warn_severity": "WARN",
           "warn_message": "Benefit Stage Qualifier (392-MU) must be populated when Medicare Part D is indicated (INS.694-ZJ=Y). Verify value matches Part D benefit phase."
@@ -105,12 +268,36 @@
         "field_name": "Medicare Part D Coverage Indicator",
         "action": "carry",
         "notes": "New in F6. Y = Medicare Part D claim; drives conditional requirements on 392-MU."
+      },
+      {
+        "field_id": "C47-9T",
+        "field_name": "Other Payer Adjudicated Program Type",
+        "action": "add",
+        "mandatory_f6": false,
+        "default_value": "",
+        "warn_if_empty": true,
+        "warn_code": "APT",
+        "warn_severity": "WARN",
+        "warn_message": "Other Payer Adjudicated Program Type (C47-9T) is required when COB segment is present but cannot be determined from the D.0 input alone. Populate with the Adjudicated Program Type (A28-ZR) value returned by the prior payer in their response. Common values: 1=Medicare Part D, 2=Medicaid, 3=Commercial, 4=Medicare Part B.",
+        "notes": "CONFIRMED: Mandatory when COB/Other Payments Segment is present. Populate from prior payer's Adjudicated Program Type (A28-ZR) response. Cannot be known at conversion time without the prior payer's response \u2014 add as empty field, emit WARN so LLM or user can fill. SOURCE: F6 Editorial v02 \u00a73.10.1."
       }
     ],
     "PRE": [
-      { "field_id": "466-EZ", "field_name": "Prescriber ID Qualifier", "action": "carry" },
-      { "field_id": "411-DB", "field_name": "Prescriber ID", "action": "carry" },
-      { "field_id": "427-DR", "field_name": "Prescriber Last Name", "action": "carry" },
+      {
+        "field_id": "466-EZ",
+        "field_name": "Prescriber ID Qualifier",
+        "action": "carry"
+      },
+      {
+        "field_id": "411-DB",
+        "field_name": "Prescriber ID",
+        "action": "carry"
+      },
+      {
+        "field_id": "427-DR",
+        "field_name": "Prescriber Last Name",
+        "action": "carry"
+      },
       {
         "field_id": "364-2J",
         "field_name": "Prescriber First Name",
@@ -124,21 +311,61 @@
       }
     ],
     "PRI": [
-      { "field_id": "409-D9", "field_name": "Ingredient Cost Submitted", "action": "carry" },
-      { "field_id": "412-DC", "field_name": "Dispensing Fee Submitted", "action": "carry" },
-      { "field_id": "426-DQ", "field_name": "Usual and Customary Charge", "action": "carry" },
-      { "field_id": "430-DU", "field_name": "Gross Amount Due", "action": "carry" },
-      { "field_id": "423-DN", "field_name": "Basis of Cost Determination", "action": "carry" },
+      {
+        "field_id": "409-D9",
+        "field_name": "Ingredient Cost Submitted",
+        "action": "carry"
+      },
+      {
+        "field_id": "412-DC",
+        "field_name": "Dispensing Fee Submitted",
+        "action": "carry"
+      },
+      {
+        "field_id": "426-DQ",
+        "field_name": "Usual and Customary Charge",
+        "action": "carry"
+      },
+      {
+        "field_id": "430-DU",
+        "field_name": "Gross Amount Due",
+        "action": "carry"
+      },
+      {
+        "field_id": "423-DN",
+        "field_name": "Basis of Cost Determination",
+        "action": "carry"
+      },
       {
         "field_id": "478-H7",
-        "field_name": "Real Time Benefit Reference",
-        "action": "add",
-        "default_value": "",
+        "field_name": "Basis of Reimbursement",
+        "action": "cases",
+        "mandatory_f6": false,
+        "notes": "NEW in F6 PRI segment. Maps from D.0 CLM field 423-DN (Basis of Cost Determination). Codes are identical \u2014 direct map. If 423-DN is present and non-empty, copy the value. If 423-DN is absent, emit WARN BRD. SOURCE: NCPDP F6 Editorial v02 \u00a73.11 PRI segment field reference.",
         "warn_if_empty": true,
-        "warn_code": "RT",
+        "warn_code": "BRD",
         "warn_severity": "WARN",
-        "warn_message": "Real Time Benefit Reference (478-H7) is empty. Confirm supplier source.",
-        "notes": "New field supporting real time benefit and formulary communication."
+        "warn_message": "Basis of Reimbursement (478-H7) is empty. Could not map from 423-DN (Basis of Cost Determination) \u2014 field was absent in the source D.0 transaction.",
+        "cases": [
+          {
+            "when": {
+              "operator": "present_and_nonempty",
+              "field": "CLM.423-DN"
+            },
+            "then": {
+              "action": "transform",
+              "transform": "COPY_FROM_FIELD",
+              "source_field": "CLM.423-DN"
+            }
+          },
+          {
+            "when": "default",
+            "then": {
+              "action": "add",
+              "default_value": ""
+            }
+          }
+        ]
       }
     ]
   }

@@ -97,8 +97,7 @@ class AuditSummary:
 class MappingResult:
     segments: list[MappedSegment]
     detected_type: str
-    parse_errors: list[ParseError] = dc_field(default_factory=list)
-    findings: list[dict] = dc_field(default_factory=list) # <--- Make sure this is here
+    findings: list[dict] = dc_field(default_factory=list)
     parse_errors: list = dc_field(default_factory=list)
 
     @property

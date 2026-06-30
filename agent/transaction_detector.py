@@ -71,8 +71,6 @@ class TransactionDetector:
             return 'SPECIALTY'
 
         # ── Default fallback ───────────────────────────────────────────────
-        print(f"DEBUG DETECTOR: HDR fields found = {[f.field_id for f in tx.get_segments('HDR')[0].fields]}")
-        print(f"DEBUG DETECTOR: tx_code={tx_code}, scc={scc}, level_of_service={level_of_service}")
         return 'RETAIL'
 
 

@@ -375,10 +375,10 @@ class F6Validator:
                 else f'Compound code "{cmpd.strip()}" must be 1 (not compound) or 2 (compound)')
 
         # Pharmacy Service Type (new in F6)
-        pst = tx.get_field('CLM', '600-28')
+        pst = tx.get_field('CLM', '147-U7')
         if pst is not None and pst.strip():
             ok = pst.strip() in VALID_PHARMACY_SVC_TYPE
-            add('FMT_CLM_PST', 'CLM', '600-28', 'Pharmacy Service Type',
+            add('FMT_CLM_PST', 'CLM', '147-U7', 'Pharmacy Service Type',
                 'PASS' if ok else 'WARN',
                 f'one of {sorted(VALID_PHARMACY_SVC_TYPE)}', pst.strip(),
                 'Pharmacy Service Type code is valid' if ok
@@ -452,9 +452,9 @@ class F6Validator:
                 if ok else
                 f'SCC = {scc.strip()} requires a PA Number (461-EU) but it is missing')
 
-            pst = tx.get_field('CLM', '600-28')
+            pst = tx.get_field('CLM', '147-U7')
             ok_pst = pst and pst.strip() == '08'
-            add('BIZ_SPECIALTY_PST', 'CLM', '600-28', 'Pharmacy Service Type (Specialty)',
+            add('BIZ_SPECIALTY_PST', 'CLM', '147-U7', 'Pharmacy Service Type (Specialty)',
                 'PASS' if ok_pst else 'WARN', '"08" when SCC = 42 or 43',
                 pst.strip() if pst else 'MISSING',
                 'Pharmacy Service Type is correctly 08 (Specialty)'
@@ -477,9 +477,9 @@ class F6Validator:
         # LTC patient residence: PST should be 05
         pat_res = tx.get_field('PAT', '384-4X')
         if pat_res and pat_res.strip() in LTC_PATIENT_RESIDENCE_CODES:
-            pst = tx.get_field('CLM', '600-28')
+            pst = tx.get_field('CLM', '147-U7')
             ok  = pst and pst.strip() == '05'
-            add('BIZ_LTC_PST_05', 'CLM', '600-28', 'Pharmacy Service Type (LTC)',
+            add('BIZ_LTC_PST_05', 'CLM', '147-U7', 'Pharmacy Service Type (LTC)',
                 'PASS' if ok else 'WARN',
                 '"05" (LTC) when patient residence is an LTC code',
                 pst.strip() if pst else 'MISSING',
@@ -518,6 +518,51 @@ class F6Validator:
                 'PASS' if ok else 'ERROR', 'numeric value (cents)', opa.strip(),
                 'Other Payer Amount is numeric'
                 if ok else f'Other Payer Amount "{opa.strip()}" is not a valid number')
+
+        # DEA Number — required only for Schedule II-V controlled substances.
+        # Cannot determine drug schedule from NDC alone without a lookup table,
+        # so emit WARN (not ERROR). The LLM layer escalates to ERROR when it
+        # confirms the NDC is a scheduled drug.
+        dea = tx.get_field('PRE', '464-EX')
+        ndc = tx.get_field('CLM', '402-D2')
+        if not dea or not dea.strip():
+            checks.append(ValidationCheck(
+                check_id    = 'BIZ_DEA_ABSENT',
+                category    = 'business',
+                segment     = 'PRE',
+                field_id    = '464-EX',
+                field_name  = 'Prescriber DEA Number',
+                status      = 'WARN',
+                expected    = 'DEA required for Schedule II-V controlled substances',
+                actual      = 'MISSING',
+                message     = (
+                    f'Prescriber DEA Number (464-EX) is absent. '
+                    f'If NDC {ndc.strip() if ndc else "unknown"} is a Schedule II-V '
+                    f'controlled substance, DEA is required and this claim will reject. '
+                    f'The LLM resolver will verify the NDC schedule and escalate to ERROR '
+                    f'if the drug is controlled.'
+                ),
+                rule_source = 'business — controlled substance check',
+            ))
+        elif dea.strip():
+            ok = bool(DEA_RE.match(dea.strip()))
+            checks.append(ValidationCheck(
+                check_id    = 'BIZ_DEA_FORMAT',
+                category    = 'business',
+                segment     = 'PRE',
+                field_id    = '464-EX',
+                field_name  = 'Prescriber DEA Number',
+                status      = 'PASS' if ok else 'ERROR',
+                expected    = '2 letters + 7 digits (e.g. AB1234567)',
+                actual      = dea.strip(),
+                message     = (
+                    'DEA number format is valid'
+                    if ok else
+                    f'DEA number "{dea.strip()}" does not match expected format. '
+                    f'Must be 2 uppercase letters followed by 7 digits.'
+                ),
+                rule_source = 'business — DEA format check',
+            ))
 
         return checks
 

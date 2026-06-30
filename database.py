@@ -171,6 +171,23 @@ def init_db():
             created_at       TEXT NOT NULL
         );
 
+        -- ── Rule Resolutions ──────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS rule_resolutions (
+            id                TEXT PRIMARY KEY,
+            resolution        TEXT NOT NULL,
+            entry_id          TEXT NOT NULL,
+            field_id          TEXT NOT NULL DEFAULT '',
+            segment_id        TEXT NOT NULL DEFAULT '',
+            transaction_type  TEXT NOT NULL DEFAULT '',
+            rejection_reason  TEXT NOT NULL DEFAULT '',
+            validator_status  TEXT NOT NULL DEFAULT '',
+            issues_json       TEXT NOT NULL DEFAULT '[]',
+            resolved_at       TEXT NOT NULL,
+            resolved_by       TEXT NOT NULL DEFAULT 'user'
+        );
+        CREATE INDEX IF NOT EXISTS idx_resolutions_resolved
+            ON rule_resolutions(resolved_at DESC);
+
         -- ── Indexes ───────────────────────────────────────────────────────
         CREATE INDEX IF NOT EXISTS idx_conversions_batch   ON conversions(batch_id);
         CREATE INDEX IF NOT EXISTS idx_conversions_status  ON conversions(status);
@@ -192,17 +209,42 @@ def migrate_db():
     because sqlite3 raises OperationalError if the column already exists.
     Call after init_db() on every startup.
     """
-    migrations = [
+    column_migrations = [
         "ALTER TABLE conversions ADD COLUMN direction TEXT NOT NULL DEFAULT 'D0_TO_F6'",
         "ALTER TABLE conversions ADD COLUMN input_text TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE conversions ADD COLUMN d0_output TEXT",
     ]
+    structural_migrations = [
+        # LLM hybrid audit trail — created here (not init_db) so existing DBs get it safely
+        """CREATE TABLE IF NOT EXISTS llm_decisions (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversion_id    TEXT NOT NULL REFERENCES conversions(id) ON DELETE CASCADE,
+            field_id         TEXT NOT NULL DEFAULT '',
+            field_name       TEXT NOT NULL DEFAULT '',
+            segment_id       TEXT NOT NULL DEFAULT '',
+            resolved_value   TEXT NOT NULL DEFAULT '',
+            original_value   TEXT NOT NULL DEFAULT '',
+            reasoning        TEXT NOT NULL DEFAULT '',
+            confidence       TEXT NOT NULL DEFAULT '',
+            finding_code     TEXT NOT NULL DEFAULT '',
+            action           TEXT NOT NULL DEFAULT '',
+            llm_model        TEXT NOT NULL DEFAULT '',
+            phi_was_masked   INTEGER NOT NULL DEFAULT 1,
+            was_overridden   INTEGER NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_llm_conv ON llm_decisions(conversion_id)",
+    ]
     with db() as conn:
-        for ddl in migrations:
+        for ddl in column_migrations:
             try:
                 conn.execute(ddl)
             except Exception:
                 pass  # column already exists
+        for ddl in structural_migrations:
+            try:
+                conn.execute(ddl)
+            except Exception:
+                pass  # table/index already exists
 
 
 def seed_from_rules_folder(rules_dir: str) -> None:

@@ -95,10 +95,7 @@ class RuleValidator:
         # ── Condition block validation ─────────────────────────────────────────
         if 'condition' in rule:
             cond = rule['condition'].get('if', {})
-            if isinstance(cond, dict) and 'conditions' in cond:
-                for i, sub in enumerate(cond.get('conditions', [])):
-                    issues.extend(self._validate_condition(sub, f'condition.if.conditions[{i}]'))
-            elif isinstance(cond, dict):
+            if isinstance(cond, dict):
                 issues.extend(self._validate_condition(cond, 'condition.if'))
 
         if 'warn_condition' in rule:
@@ -165,7 +162,18 @@ class RuleValidator:
         return clean, suspect
 
     def _validate_condition(self, cond: dict, path: str) -> list[str]:
-        issues: list[str] = []
+        # Compound condition: {"logic": "AND"|"OR", "conditions": [...]}
+        if 'logic' in cond or 'conditions' in cond:
+            issues: list[str] = []
+            subs = cond.get('conditions', [])
+            if not subs:
+                issues.append(f'INVALID: {path} compound condition has empty "conditions" list')
+            for i, sub in enumerate(subs):
+                issues.extend(self._validate_condition(sub, f'{path}.conditions[{i}]'))
+            return issues
+
+        # Flat condition: {"field": "...", "operator": "...", "value": "..."}
+        issues = []
         field_ref = cond.get('field', '')
         operator  = cond.get('operator', '')
 

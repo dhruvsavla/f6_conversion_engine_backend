@@ -1,202 +1,18 @@
 {
-  "transaction_type": "RETAIL",
+  "transaction_type": "COMPOUND",
   "_meta": {
-    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpiubr4iva_ACME_PBM_F6_Implementation_Guide.pdf",
-    "extracted_at": "2026-06-26T22:14:08.558739Z",
-    "extraction_warnings": [
-      "WARN: warn_condition.if.field \"CLM.NDC\" may not match SEGMENT.NNN-XX format"
-    ]
+    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpq2p8ygw9_ACME_PBM_F6_Implementation_Guide.pdf",
+    "extracted_at": "2026-06-28T07:31:30.984158Z",
+    "extraction_warnings": []
   },
   "segments": {
     "CMP": [
-      {
-        "field_id": "102-A2",
-        "field_name": "Version/Release Number",
-        "action": "transform",
-        "mandatory_f6": true,
-        "notes": "D.0 value 'D0' must be changed to 'F6'; claims with D0 will reject with code 02.",
-        "extraction_confidence": "HIGH",
-        "warn_if_empty": false,
-        "transform": "SET_VALUE",
-        "value": "F6"
-      },
-      {
-        "field_id": "101-A1",
-        "field_name": "BIN/IIN Number",
-        "action": "transform",
-        "mandatory_f6": true,
-        "notes": "6-digit BIN from D.0 must be zero-padded left to 8 digits in F6.",
-        "extraction_confidence": "HIGH",
-        "transform": "ZERO_PAD_LEFT",
-        "params": {
-          "length": 8
-        }
-      },
-      {
-        "field_id": "600-28",
-        "field_name": "Pharmacy Service Type",
-        "action": "add",
-        "mandatory_f6": true,
-        "notes": "New field in F6; not present in D.0; mandatory in all F6 claims. See Section 4.4 for values.",
-        "extraction_confidence": "HIGH",
-        "default_value": "",
-        "d0_present": false
-      },
-      {
-        "field_id": "418-DI",
-        "field_name": "Quantity Prescribed",
-        "action": "carry",
-        "mandatory_f6": true,
-        "notes": "Optional in D.0 but mandatory in F6; claims missing this field will reject with code 88.",
-        "extraction_confidence": "HIGH",
-        "warn_if_empty": true,
-        "warn_message": "Quantity Prescribed (418-DI) is missing. Claims missing 418-DI will reject with code 88.",
-        "warn_severity": "ERROR",
-        "warn_code": "88"
-      },
-      {
-        "field_id": "411-DB",
-        "field_name": "Prescriber NPI",
-        "action": "cases",
-        "mandatory_f6": true,
-        "notes": "NPI is mandatory in all F6 claims; DEA is also required for Schedule II-V controlled substances.",
-        "extraction_confidence": "HIGH",
-        "cases": [
-          {
-            "when": {
-              "field": "CLM.420-DK",
-              "operator": "in",
-              "value": [
-                "II",
-                "III",
-                "IV",
-                "V",
-                "2",
-                "3",
-                "4",
-                "5"
-              ]
-            },
-            "then": {
-              "action": "carry",
-              "notes": "Both NPI and DEA must be present for Schedule II-V controlled substances.",
-              "mandatory_f6": true,
-              "require_dea": true
-            }
-          },
-          {
-            "when": "default",
-            "then": {
-              "action": "carry",
-              "notes": "NPI mandatory in all claims; DEA not additionally required for non-controlled.",
-              "mandatory_f6": true
-            }
-          }
-        ]
-      },
-      {
-        "field_id": "364-2J",
-        "field_name": "Prescriber First Name",
-        "action": "cases",
-        "mandatory_f6": false,
-        "notes": "Not required in D.0; required for specialty claims (SCC 42/43) in F6; warn if absent on specialty claims.",
-        "extraction_confidence": "HIGH",
-        "cases": [
-          {
-            "when": {
-              "field": "CLM.420-DK",
-              "operator": "in",
-              "value": [
-                "42",
-                "43"
-              ]
-            },
-            "then": {
-              "action": "carry",
-              "warn_if_empty": true,
-              "warn_code": "BNS",
-              "warn_severity": "WARN",
-              "warn_message": "Prescriber First Name (364-2J) is absent on a specialty claim (SCC 42/43)."
-            }
-          },
-          {
-            "when": "default",
-            "then": {
-              "action": "carry",
-              "warn_if_empty": false
-            }
-          }
-        ]
-      },
-      {
-        "field_id": "990-MG",
-        "field_name": "Legacy Routing Field",
-        "action": "remove",
-        "mandatory_f6": false,
-        "notes": "Field existed in D.0 for routing purposes; deprecated in F6 and must not be sent in F6 transactions.",
-        "extraction_confidence": "HIGH"
-      },
-      {
-        "field_id": "392-MU",
-        "field_name": "Benefit Stage",
-        "action": "cases",
-        "mandatory_f6": false,
-        "notes": "Optional in D.0; mandatory in F6 when Medicare Part D indicator (694-ZJ) equals Y; error if missing on Part D claims.",
-        "extraction_confidence": "HIGH",
-        "cases": [
-          {
-            "when": {
-              "field": "INS.694-ZJ",
-              "operator": "eq",
-              "value": "Y"
-            },
-            "then": {
-              "action": "add",
-              "mandatory_f6": true,
-              "warn_if_empty": true,
-              "warn_code": "ERROR",
-              "warn_severity": "ERROR",
-              "warn_message": "Benefit Stage (392-MU) is missing on a Medicare Part D claim (694-ZJ = Y). This is an error."
-            }
-          },
-          {
-            "when": "default",
-            "then": {
-              "action": "carry",
-              "mandatory_f6": false
-            }
-          }
-        ]
-      },
-      {
-        "field_id": "841-5H",
-        "field_name": "REMS Authorization",
-        "action": "add",
-        "mandatory_f6": false,
-        "notes": "Not present in D.0; required for REMS-restricted drugs in F6; warn if absent on restricted NDC list.",
-        "extraction_confidence": "HIGH",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_message": "REMS Authorization (841-5H) is absent for a REMS-restricted NDC. This field is required for REMS-restricted drugs.",
-        "warn_severity": "WARN",
-        "warn_condition": {
-          "if": {
-            "field": "CLM.NDC",
-            "operator": "in",
-            "value": [
-              "REMS_RESTRICTED_NDC_LIST"
-            ]
-          }
-        },
-        "warn_code": "BNS",
-        "d0_present": false
-      },
       {
         "field_id": "450-EF",
         "field_name": "Compound Dosage Form Code",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Carry unchanged per CMP segment table on page 14.",
+        "notes": "Carry unchanged per CMP segment table; required when CMP segment is present.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -210,7 +26,7 @@
         "field_name": "Compound Dispensing Unit Form Indicator",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Carry unchanged per CMP segment table on page 14.",
+        "notes": "Carry unchanged per CMP segment table; required when CMP segment is present.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -224,7 +40,7 @@
         "field_name": "Compound Ingredient Count",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Total number of ingredients (max 25); carry unchanged per CMP segment table on page 14.",
+        "notes": "Carry unchanged per CMP segment table; total number of ingredients max 25.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -238,7 +54,7 @@
         "field_name": "Compound Product ID Qualifier",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "NDC qualifier per ingredient; carry unchanged per CMP segment table on page 14.",
+        "notes": "Carry unchanged per CMP segment table; NDC qualifier per ingredient.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -252,22 +68,22 @@
         "field_name": "Compound Product ID",
         "action": "transform",
         "mandatory_f6": true,
-        "notes": "NDC of each ingredient; hyphens must be removed per CMP segment table on page 14.",
-        "transform": "REMOVE_HYPHENS",
+        "notes": "NDC of each ingredient; hyphens must be removed per CMP segment rules.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
             "operator": "eq",
             "value": "2"
           }
-        }
+        },
+        "transform": "REMOVE_HYPHENS"
       },
       {
         "field_id": "448-ED",
         "field_name": "Compound Ingredient Quantity",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Quantity per ingredient; carry unchanged per CMP segment table on page 14.",
+        "notes": "Carry unchanged per CMP segment table; quantity per ingredient.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -281,7 +97,7 @@
         "field_name": "Compound Ingredient Drug Cost",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Cost per ingredient in cents; carry unchanged per CMP segment table on page 14.",
+        "notes": "Carry unchanged per CMP segment table; cost per ingredient in cents.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -295,7 +111,7 @@
         "field_name": "Compound Ingredient Basis of Cost",
         "action": "carry",
         "mandatory_f6": false,
-        "notes": "How cost was determined; optional, carry unchanged per CMP segment table on page 14.",
+        "notes": "Optional field; carry unchanged per CMP segment table; describes how cost was determined.",
         "condition": {
           "if": {
             "field": "CLM.406-D6",
@@ -309,16 +125,16 @@
         "field_name": "Compound Ingredient Modifier Code",
         "action": "add",
         "mandatory_f6": false,
-        "notes": "New field in F6 not present in D.0; append to CMP segment with empty value per page 14.",
+        "notes": "New field in F6 not present in D.0; append to CMP segment with empty value.",
         "default_value": "",
-        "d0_present": false,
         "condition": {
           "if": {
             "field": "CLM.406-D6",
             "operator": "eq",
             "value": "2"
           }
-        }
+        },
+        "d0_present": false
       }
     ]
   }

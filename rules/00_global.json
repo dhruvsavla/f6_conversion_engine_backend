@@ -1,19 +1,74 @@
 {
-  "type": "global",
-  "segment_aliases": {
-    "B1": "CLM", "B2": "CLM", "C4": "PAT", "L1": "COB",
-    "F1": "PA", "I1": "CMP", "A4": "PRI", "W1": "WRK"
+  "transaction_type": "RETAIL",
+  "_meta": {
+    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpq2p8ygw9_ACME_PBM_F6_Implementation_Guide.pdf",
+    "extracted_at": "2026-06-28T07:31:30.984105Z",
+    "extraction_warnings": []
   },
-  "transforms": {
-    "ZERO_PAD_LEFT": "Pad value with leading zeros to params.length",
-    "SET_VALUE": "Replace value with fixed value string",
-    "MAP_CODE": "Translate using map object",
-    "REMOVE_HYPHENS": "Strip all hyphens",
-    "UPPERCASE": "Convert to uppercase",
-    "DATE_REFORMAT": "Reformat date between params.from_format and params.to_format"
-  },
-  "transaction_detection_priority": [
-    "REVERSAL", "ELIGIBILITY", "PRIOR_AUTH", "COMPOUND",
-    "LTC", "COB", "MEDICARE_PART_D", "CONTROLLED", "SPECIALTY", "RETAIL"
-  ]
+  "segments": {
+    "HDR": [
+      {
+        "field_id": "101-A1",
+        "field_name": "BIN / IIN Number",
+        "action": "transform",
+        "mandatory_f6": true,
+        "notes": "If source D.0 contains a 6-digit BIN, zero-pad left to produce an 8-digit IIN; ACME BIN is 00610279.",
+        "params": {
+          "length": 8
+        },
+        "transform": "ZERO_PAD_LEFT"
+      },
+      {
+        "field_id": "102-A2",
+        "field_name": "Version/Release Number",
+        "action": "transform",
+        "mandatory_f6": true,
+        "notes": "MUST be updated from 'D0' to 'F6' on every transaction; claims with 'D0' will be rejected with code 02.",
+        "value": "F6",
+        "transform": "SET_VALUE"
+      },
+      {
+        "field_id": "103-A3",
+        "field_name": "Transaction Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Valid values are B1=Claim Billing, B2=Reversal, E1=Eligibility, PA=Prior Auth; carry unchanged from D.0."
+      },
+      {
+        "field_id": "104-A4",
+        "field_name": "Processor Control Number",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "ACME PCN is PCN4501; carry unchanged if present in D.0; field is optional."
+      },
+      {
+        "field_id": "109-A9",
+        "field_name": "Transaction Count",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Number of claim transactions in the request; usually 1 for real-time processing."
+      },
+      {
+        "field_id": "201-B1",
+        "field_name": "Service Provider ID",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "NPI of the dispensing pharmacy; 10-digit NPI preferred; carry unchanged from D.0."
+      },
+      {
+        "field_id": "202-B2",
+        "field_name": "Service Provider ID Qualifier",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Valid values are 01=NPI and 05=NCPDP Provider ID; carry unchanged from D.0."
+      },
+      {
+        "field_id": "401-D1",
+        "field_name": "Date of Service",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Format must be CCYYMMDD representing the date the prescription was dispensed; carry unchanged from D.0."
+      }
+    ]
+  }
 }

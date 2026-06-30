@@ -1,0 +1,160 @@
+{
+  "transaction_type": "CONTROLLED",
+  "description": "Controlled substance pharmacy claim with DUR segment",
+  "detection": {
+    "transaction_code": ["B1", "01"],
+    "compound_code_not": ["2"],
+    "patient_residence_not": ["03", "06", "09", "31", "32", "33"],
+    "segment_present": ["DUR"]
+  },
+  "segments": {
+    "HDR": [
+      { "field_id": "101-A1", "field_name": "BIN / IIN Number", "action": "transform", "transform": "ZERO_PAD_LEFT", "params": { "length": 8 }, "notes": "6 byte BIN left-padded to 8 byte IIN." },
+      { "field_id": "102-A2", "field_name": "Version / Release Number", "action": "transform", "transform": "SET_VALUE", "value": "F6" },
+      { "field_id": "103-A3", "field_name": "Transaction Code", "action": "carry" },
+      { "field_id": "104-A4", "field_name": "Processor Control Number", "action": "carry" },
+      { "field_id": "109-A9", "field_name": "Transaction Count", "action": "carry" },
+      { "field_id": "201-B1", "field_name": "Service Provider ID", "action": "carry" },
+      { "field_id": "202-B2", "field_name": "Service Provider ID Qualifier", "action": "carry" },
+      { "field_id": "401-D1", "field_name": "Date of Service", "action": "carry" }
+    ],
+    "INS": [
+      { "field_id": "302-C2", "field_name": "Cardholder ID", "action": "carry" },
+      { "field_id": "301-C1", "field_name": "Group ID", "action": "carry" },
+      { "field_id": "306-C6", "field_name": "Patient Relationship Code", "action": "carry" },
+      {
+        "field_id": "367-2N",
+        "field_name": "Medicaid Agency Number",
+        "action": "add",
+        "default_value": "",
+        "warn_if_empty": true,
+        "warn_code": "BNI",
+        "warn_severity": "WARN",
+        "warn_message": "Medicaid Agency Number (367-2N) is new in F6. Confirm value with payer."
+      },
+      { "field_id": "990-MG", "field_name": "Other Payer BIN (legacy)", "action": "remove", "notes": "Moved to COB segment under F6." }
+    ],
+    "PAT": [
+      { "field_id": "304-C4", "field_name": "Date of Birth", "action": "carry" },
+      { "field_id": "305-C5", "field_name": "Patient Gender Code", "action": "modify", "notes": "Expanded code set in F6." },
+      { "field_id": "310-CA", "field_name": "Patient First Name", "action": "carry" },
+      { "field_id": "311-CB", "field_name": "Patient Last Name", "action": "carry" }
+    ],
+    "CLM": [
+      { "field_id": "455-EM", "field_name": "Rx / Service Reference Number Qualifier", "action": "carry" },
+      { "field_id": "402-D2", "field_name": "Rx / Service Reference Number", "action": "carry" },
+      { "field_id": "436-E1", "field_name": "Product / Service ID Qualifier", "action": "carry" },
+      { "field_id": "407-D7", "field_name": "Product / Service ID", "action": "carry" },
+      { "field_id": "442-E7", "field_name": "Quantity Dispensed", "action": "carry" },
+      { "field_id": "403-D3", "field_name": "Fill Number", "action": "carry" },
+      { "field_id": "405-D5", "field_name": "Days Supply", "action": "carry" },
+      { "field_id": "406-D6", "field_name": "Compound Code", "action": "carry" },
+      { "field_id": "408-D8", "field_name": "Dispense As Written Code", "action": "carry" },
+      { "field_id": "414-DE", "field_name": "Date Prescription Written", "action": "carry" },
+      { "field_id": "419-DJ", "field_name": "Prescription Origin Code", "action": "modify", "notes": "Expanded origin code set in F6." },
+      {
+        "field_id": "600-28",
+        "field_name": "Pharmacy Service Type",
+        "action": "cases",
+        "notes": "Service type: 08=Specialty (SCC 42/43), 05=LTC (facility), 01=Retail (default)",
+        "cases": [
+          {
+            "when": {
+              "field": "CLM.420-DK",
+              "operator": "in",
+              "value": ["42", "43"]
+            },
+            "then": { "action": "add", "default_value": "08" }
+          },
+          {
+            "when": {
+              "field": "PAT.384-7E",
+              "operator": "in",
+              "value": ["03", "06", "09", "31", "32", "33"]
+            },
+            "then": { "action": "add", "default_value": "05" }
+          },
+          {
+            "when": "default",
+            "then": { "action": "add", "default_value": "01" }
+          }
+        ]
+      },
+      {
+        "field_id": "995-E2",
+        "field_name": "Specialty Pharmacy Indicator",
+        "action": "add",
+        "default_value": "",
+        "warn_if_empty": true,
+        "warn_code": "SP",
+        "warn_severity": "WARN",
+        "warn_message": "Specialty Pharmacy Indicator (995-E2) is empty. Confirm supplier source."
+      },
+      {
+        "field_id": "996-E3",
+        "field_name": "REMS Authorization Number",
+        "action": "add",
+        "default_value": "",
+        "warn_if_empty": true,
+        "warn_code": "RM",
+        "warn_severity": "WARN",
+        "warn_message": "REMS Authorization Number (996-E3) is empty. Confirm whether product is restricted."
+      }
+    ],
+    "PRE": [
+      { "field_id": "466-EZ", "field_name": "Prescriber ID Qualifier", "action": "carry" },
+      { "field_id": "411-DB", "field_name": "Prescriber ID", "action": "carry" },
+      { "field_id": "427-DR", "field_name": "Prescriber Last Name", "action": "carry" },
+      {
+        "field_id": "464-EX",
+        "field_name": "DEA Number",
+        "action": "carry",
+        "mandatory_f6": true,
+        "condition": {
+          "if": {
+            "field": "CLM.408-D8",
+            "operator": "in",
+            "value": ["2", "3", "4", "5"]
+          }
+        },
+        "warn_if_empty": true,
+        "warn_code": "DEA",
+        "warn_severity": "ERROR",
+        "warn_message": "DEA Number is required for Schedule II-V controlled substances."
+      },
+      {
+        "field_id": "364-2J",
+        "field_name": "Prescriber First Name",
+        "action": "add",
+        "default_value": "",
+        "warn_if_empty": true,
+        "warn_code": "PF",
+        "warn_severity": "WARN",
+        "warn_message": "Prescriber First Name (364-2J) is new in F6. Required for controlled substance traceability."
+      }
+    ],
+    "DUR": [
+      { "field_id": "473-7E", "field_name": "DUR / PPS Code Counter", "action": "carry" },
+      { "field_id": "439-E4", "field_name": "Reason for Service Code", "action": "modify", "notes": "Expanded reason code set in F6." },
+      { "field_id": "440-E5", "field_name": "Professional Service Code", "action": "carry" },
+      { "field_id": "441-E6", "field_name": "Result of Service Code", "action": "carry" }
+    ],
+    "PRI": [
+      { "field_id": "409-D9", "field_name": "Ingredient Cost Submitted", "action": "carry" },
+      { "field_id": "412-DC", "field_name": "Dispensing Fee Submitted", "action": "carry" },
+      { "field_id": "426-DQ", "field_name": "Usual and Customary Charge", "action": "carry" },
+      { "field_id": "430-DU", "field_name": "Gross Amount Due", "action": "carry" },
+      { "field_id": "423-DN", "field_name": "Basis of Cost Determination", "action": "carry" },
+      {
+        "field_id": "478-H7",
+        "field_name": "Real Time Benefit Reference",
+        "action": "add",
+        "default_value": "",
+        "warn_if_empty": true,
+        "warn_code": "RT",
+        "warn_severity": "WARN",
+        "warn_message": "Real Time Benefit Reference (478-H7) is empty. Confirm supplier source."
+      }
+    ]
+  }
+}

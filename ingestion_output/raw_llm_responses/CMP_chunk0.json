@@ -5,7 +5,7 @@
     "field_name": "Compound Dosage Form Code",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "Carry unchanged per CMP segment table on page 14.",
+    "notes": "Carry unchanged per CMP segment table; required when CMP segment is present.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -19,7 +19,7 @@
     "field_name": "Compound Dispensing Unit Form Indicator",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "Carry unchanged per CMP segment table on page 14.",
+    "notes": "Carry unchanged per CMP segment table; required when CMP segment is present.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -33,7 +33,7 @@
     "field_name": "Compound Ingredient Count",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "Total number of ingredients (max 25); carry unchanged per CMP segment table on page 14.",
+    "notes": "Carry unchanged per CMP segment table; total number of ingredients max 25.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -47,7 +47,7 @@
     "field_name": "Compound Product ID Qualifier",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "NDC qualifier per ingredient; carry unchanged per CMP segment table on page 14.",
+    "notes": "Carry unchanged per CMP segment table; NDC qualifier per ingredient.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -61,7 +61,7 @@
     "field_name": "Compound Product ID",
     "action": "transform",
     "mandatory_f6": true,
-    "notes": "NDC of each ingredient; hyphens must be removed per CMP segment table on page 14.",
+    "notes": "NDC of each ingredient; hyphens must be removed per CMP segment rules.",
     "transform": "REMOVE_HYPHENS",
     "condition": {
       "if": {
@@ -76,7 +76,7 @@
     "field_name": "Compound Ingredient Quantity",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "Quantity per ingredient; carry unchanged per CMP segment table on page 14.",
+    "notes": "Carry unchanged per CMP segment table; quantity per ingredient.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -90,7 +90,7 @@
     "field_name": "Compound Ingredient Drug Cost",
     "action": "carry",
     "mandatory_f6": true,
-    "notes": "Cost per ingredient in cents; carry unchanged per CMP segment table on page 14.",
+    "notes": "Carry unchanged per CMP segment table; cost per ingredient in cents.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -104,7 +104,7 @@
     "field_name": "Compound Ingredient Basis of Cost",
     "action": "carry",
     "mandatory_f6": false,
-    "notes": "How cost was determined; optional, carry unchanged per CMP segment table on page 14.",
+    "notes": "Optional field; carry unchanged per CMP segment table; describes how cost was determined.",
     "condition": {
       "if": {
         "field": "CLM.406-D6",
@@ -118,7 +118,7 @@
     "field_name": "Compound Ingredient Modifier Code",
     "action": "add",
     "mandatory_f6": false,
-    "notes": "New field in F6 not present in D.0; append to CMP segment with empty value per page 14.",
+    "notes": "New field in F6 not present in D.0; append to CMP segment with empty value.",
     "default_value": "",
     "d0_present": false,
     "condition": {

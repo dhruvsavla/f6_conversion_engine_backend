@@ -1,117 +1,543 @@
 {
   "transaction_type": "RETAIL",
-  "description": "Standard retail community pharmacy claim",
-  "detection": {
-    "transaction_code": ["B1", "01"],
-    "compound_code_not": ["2"],
-    "patient_residence_not": ["03", "06", "09", "31", "32", "33"]
+  "_meta": {
+    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpq2p8ygw9_ACME_PBM_F6_Implementation_Guide.pdf",
+    "extracted_at": "2026-06-28T07:31:30.984142Z",
+    "extraction_warnings": []
   },
   "segments": {
-    "HDR": [
-      { "field_id": "101-A1", "field_name": "BIN / IIN Number", "action": "transform", "transform": "ZERO_PAD_LEFT", "params": { "length": 8 }, "notes": "6 byte BIN carried as an 8 byte IIN by left padding." },
-      { "field_id": "102-A2", "field_name": "Version / Release Number", "action": "transform", "transform": "SET_VALUE", "value": "F6", "notes": "Literal value moves between D0 and F6." },
-      { "field_id": "103-A3", "field_name": "Transaction Code", "action": "carry" },
-      { "field_id": "104-A4", "field_name": "Processor Control Number", "action": "carry" },
-      { "field_id": "109-A9", "field_name": "Transaction Count", "action": "carry" },
-      { "field_id": "201-B1", "field_name": "Service Provider ID", "action": "carry" },
-      { "field_id": "202-B2", "field_name": "Service Provider ID Qualifier", "action": "carry" },
-      { "field_id": "401-D1", "field_name": "Date of Service", "action": "carry" }
+    "CLM": [
+      {
+        "field_id": "455-EM",
+        "field_name": "Prescription/Service Ref Number",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Rx number assigned by the pharmacy; carry unchanged per section 4.4."
+      },
+      {
+        "field_id": "402-D2",
+        "field_name": "Product/Service ID (NDC)",
+        "action": "transform",
+        "mandatory_f6": true,
+        "notes": "11-digit NDC; all hyphens must be removed before transmitting per section 4.4 and page 9 rule.",
+        "transform": "REMOVE_HYPHENS"
+      },
+      {
+        "field_id": "403-D3",
+        "field_name": "Product/Service ID Qualifier",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Value 03=NDC; carry unchanged per section 4.4."
+      },
+      {
+        "field_id": "407-D7",
+        "field_name": "Quantity Dispensed",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Amount dispensed; carry unchanged per section 4.4."
+      },
+      {
+        "field_id": "405-D5",
+        "field_name": "Days Supply",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Number of days the dispensed quantity will last; carry unchanged per section 4.4."
+      },
+      {
+        "field_id": "406-D6",
+        "field_name": "Compound Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "1=Not a compound, 2=Compound; carry unchanged. When value is 2, CMP segment is required and PA rules change per section 4.4."
+      },
+      {
+        "field_id": "408-D8",
+        "field_name": "DAW/Product Selection Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Product selection/substitution code; carry unchanged per section 4.4."
+      },
+      {
+        "field_id": "414-DE",
+        "field_name": "Fill Number",
+        "action": "cases",
+        "mandatory_f6": true,
+        "notes": "Fill number with Schedule II constraint; carry unchanged except Schedule II drugs must have fill number 0 per section 4.4.",
+        "cases": [
+          {
+            "when": {
+              "field": "CLM.414-DE",
+              "operator": "gt",
+              "value": "0"
+            },
+            "then": {
+              "action": "carry",
+              "warn_if_empty": false,
+              "warn_code": "SCHII",
+              "warn_severity": "ERROR",
+              "warn_message": "Schedule II drugs MUST have fill number 0 (no refills permitted)."
+            }
+          },
+          {
+            "when": "default",
+            "then": {
+              "action": "carry"
+            }
+          }
+        ]
+      },
+      {
+        "field_id": "415-DF",
+        "field_name": "Refills Authorized",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Number of refills authorized; must be 0 for Schedule II controlled substances per section 4.4."
+      },
+      {
+        "field_id": "418-DI",
+        "field_name": "Quantity Prescribed",
+        "action": "add",
+        "mandatory_f6": true,
+        "notes": "Was optional in D.0; now mandatory in F6 \u2014 emit ERROR code QP and reject if missing per section 4.4 and page 9 rule.",
+        "default_value": "",
+        "warn_message": "Field 418-DI (Quantity Prescribed) is MANDATORY in F6. If absent from the D.0 transaction, emit ERROR with code QP and reject the claim.",
+        "warn_severity": "ERROR",
+        "d0_present": false,
+        "warn_code": "QP",
+        "warn_if_empty": true
+      },
+      {
+        "field_id": "419-DJ",
+        "field_name": "Origin Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "1=Written, 2=Telephone, 3=Fax, 4=Electronic, 5=Pharmacy generated; carry unchanged per section 4.4."
+      },
+      {
+        "field_id": "420-DK",
+        "field_name": "Submission Clarification Code",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Situational; 42=Specialty pharmacy, 43=Long-term specialty; triggers Pharmacy Service Type and Prior Authorization requirements per section 4.4."
+      },
+      {
+        "field_id": "147-U7",
+        "field_name": "Pharmacy Service Type",
+        "action": "cases",
+        "mandatory_f6": true,
+        "notes": "NEW and MANDATORY in F6; not present in D.0. Derived in priority order from SCC, Patient Residence, and Compound Code per section 4.4.1.",
+        "d0_present": false,
+        "cases": [
+          {
+            "when": {
+              "field": "CLM.420-DK",
+              "operator": "in",
+              "value": [
+                "42",
+                "43"
+              ]
+            },
+            "then": {
+              "action": "add",
+              "default_value": "08"
+            }
+          },
+          {
+            "when": {
+              "field": "PAT.384-4X",
+              "operator": "in",
+              "value": [
+                "03",
+                "06",
+                "09",
+                "31",
+                "32",
+                "33"
+              ]
+            },
+            "then": {
+              "action": "add",
+              "default_value": "05"
+            }
+          },
+          {
+            "when": {
+              "field": "CLM.406-D6",
+              "operator": "eq",
+              "value": "2"
+            },
+            "then": {
+              "action": "add",
+              "default_value": "02"
+            }
+          },
+          {
+            "when": "default",
+            "then": {
+              "action": "add",
+              "default_value": "01"
+            }
+          }
+        ]
+      },
+      {
+        "field_id": "995-E2",
+        "field_name": "Route of Administration",
+        "action": "add",
+        "mandatory_f6": false,
+        "notes": "Situational in F6. SNOMED CT value from NLM VSAC. Only add if value is known; leave empty otherwise.",
+        "default_value": "",
+        "d0_present": false
+      }
     ],
     "INS": [
-      { "field_id": "302-C2", "field_name": "Cardholder ID", "action": "carry" },
-      { "field_id": "301-C1", "field_name": "Group ID", "action": "carry" },
-      { "field_id": "306-C6", "field_name": "Patient Relationship Code", "action": "carry" },
+      {
+        "field_id": "302-C2",
+        "field_name": "Cardholder ID",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Member insurance ID number; carry unchanged from D.0 per section 4.2 table."
+      },
+      {
+        "field_id": "301-C1",
+        "field_name": "Group ID",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Insurance group number; carry unchanged if present per section 4.2 table."
+      },
+      {
+        "field_id": "306-C6",
+        "field_name": "Patient Relationship Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Patient relationship code; carry unchanged from D.0 per section 4.2 table."
+      },
+      {
+        "field_id": "308-C8",
+        "field_name": "Other Coverage Code",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Other coverage code; situational, required when COB segment is present per section 4.2 table."
+      },
+      {
+        "field_id": "309-C9",
+        "field_name": "Eligibility Clarification Code",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Eligibility clarification code; situational, required when eligibility requires clarification per section 4.2 table."
+      },
       {
         "field_id": "367-2N",
-        "field_name": "Medicaid Agency Number",
+        "field_name": "Benefit Network Indicator",
         "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "BNI",
+        "mandatory_f6": true,
+        "notes": "New mandatory F6 field not present in D.0; append to end of INS segment, default to 01 if unknown per section 4.2 rule.",
+        "default_value": "01",
+        "warn_message": "Benefit Network Indicator (367-2N) value could not be determined from available data; defaulted to 01.",
         "warn_severity": "WARN",
-        "warn_message": "Medicaid Agency Number (367-2N) is new in F6. Not present in D.0. Confirm value with payer.",
-        "notes": "New eligibility field, populate from supplier source on billing."
+        "d0_present": false,
+        "warn_code": "BNS",
+        "warn_if_empty": true
+      },
+      {
+        "field_id": "694-ZJ",
+        "field_name": "Medicare Part D Indicator",
+        "action": "cases",
+        "mandatory_f6": false,
+        "notes": "New F6 field; when Y, COB field 392-MU becomes mandatory and ERROR must be emitted if missing per section 4.2 rule.",
+        "cases": [
+          {
+            "when": {
+              "field": "INS.694-ZJ",
+              "operator": "eq",
+              "value": "Y"
+            },
+            "then": {
+              "action": "add",
+              "default_value": "Y",
+              "warn_if_empty": true,
+              "warn_code": "PTD",
+              "warn_severity": "ERROR",
+              "warn_message": "Medicare Part D Indicator (694-ZJ) is Y but Benefit Stage Qualifier (392-MU) in the COB segment is missing or empty."
+            }
+          },
+          {
+            "when": "default",
+            "then": {
+              "action": "add",
+              "default_value": ""
+            }
+          }
+        ]
+      },
+      {
+        "field_id": "695-ZK",
+        "field_name": "LIS Level",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Low Income Subsidy level; situational, required for Part D claims when applicable per section 4.2 table.",
+        "condition": {
+          "if": {
+            "field": "INS.694-ZJ",
+            "operator": "eq",
+            "value": "Y"
+          }
+        }
       },
       {
         "field_id": "990-MG",
-        "field_name": "Other Payer BIN (legacy position)",
+        "field_name": "Legacy Routing Code",
         "action": "remove",
-        "notes": "Carried in the restructured COB segment under F6."
+        "mandatory_f6": false,
+        "notes": "Deprecated in F6; must be removed from all claim submissions and excluded from F6 output even if present in D.0 input per section 4.2 rule."
       }
     ],
     "PAT": [
-      { "field_id": "304-C4", "field_name": "Date of Birth", "action": "carry" },
-      { "field_id": "305-C5", "field_name": "Patient Gender Code", "action": "modify", "notes": "Expanded code set under F6, validated against the new value list." },
-      { "field_id": "310-CA", "field_name": "Patient First Name", "action": "carry" },
-      { "field_id": "311-CB", "field_name": "Patient Last Name", "action": "carry" }
-    ],
-    "CLM": [
-      { "field_id": "455-EM", "field_name": "Rx / Service Reference Number Qualifier", "action": "carry" },
-      { "field_id": "402-D2", "field_name": "Rx / Service Reference Number", "action": "carry" },
-      { "field_id": "436-E1", "field_name": "Product / Service ID Qualifier", "action": "carry" },
-      { "field_id": "407-D7", "field_name": "Product / Service ID", "action": "carry" },
-      { "field_id": "442-E7", "field_name": "Quantity Dispensed", "action": "carry" },
-      { "field_id": "403-D3", "field_name": "Fill Number", "action": "carry" },
-      { "field_id": "405-D5", "field_name": "Days Supply", "action": "carry" },
-      { "field_id": "406-D6", "field_name": "Compound Code", "action": "carry" },
-      { "field_id": "408-D8", "field_name": "Dispense As Written Code", "action": "carry" },
-      { "field_id": "414-DE", "field_name": "Date Prescription Written", "action": "carry" },
-      { "field_id": "419-DJ", "field_name": "Prescription Origin Code", "action": "modify", "notes": "Expanded origin code set under F6 (electronic prescribing values added)." },
       {
-        "field_id": "995-E2",
-        "field_name": "Specialty Pharmacy Indicator",
-        "action": "add",
-        "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "SP",
-        "warn_severity": "WARN",
-        "warn_message": "Specialty Pharmacy Indicator (995-E2) is empty. Confirm supplier source mapping.",
-        "notes": "New field supporting specialty and high cost therapy analytics."
+        "field_id": "304-C4",
+        "field_name": "Date of Birth",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Format CCYYMMDD; mandatory in all claim types; carry unchanged from D.0."
       },
       {
-        "field_id": "996-E3",
-        "field_name": "REMS Authorization Number",
+        "field_id": "305-C5",
+        "field_name": "Patient Gender Code",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Values 1=Male, 2=Female, 0=Unknown; carry unchanged from D.0."
+      },
+      {
+        "field_id": "310-CA",
+        "field_name": "Patient First Name",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Optional; carry unchanged if present in D.0."
+      },
+      {
+        "field_id": "311-CB",
+        "field_name": "Patient Last Name",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Optional; carry unchanged if present in D.0."
+      },
+      {
+        "field_id": "384-4X",
+        "field_name": "Patient Residence",
+        "action": "cases",
+        "mandatory_f6": false,
+        "notes": "F6 introduces expanded LTC codes; value drives downstream Pharmacy Service Type logic (handled in CLM segment).",
+        "cases": [
+          {
+            "when": {
+              "field": "PAT.384-4X",
+              "operator": "in",
+              "value": [
+                "03",
+                "06",
+                "09",
+                "31",
+                "32",
+                "33"
+              ]
+            },
+            "then": {
+              "action": "carry",
+              "notes": "LTC residence codes \u2014 carry value; downstream CLM.600-28 will be set to 05."
+            }
+          },
+          {
+            "when": "default",
+            "then": {
+              "action": "carry",
+              "notes": "Non-LTC residence code \u2014 carry value unchanged."
+            }
+          }
+        ]
+      },
+      {
+        "field_id": "357-NV",
+        "field_name": "Patient ID Count",
         "action": "add",
+        "mandatory_f6": false,
+        "notes": "New in F6. Count of patient identifier occurrences (331-CX / 332-CY pairs). Leave empty when no patient IDs are submitted.",
         "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "RM",
-        "warn_severity": "WARN",
-        "warn_message": "REMS Authorization Number (996-E3) is empty. Confirm whether product is restricted.",
-        "notes": "New field for restricted distribution products."
+        "d0_present": false
       }
     ],
     "PRE": [
-      { "field_id": "466-EZ", "field_name": "Prescriber ID Qualifier", "action": "carry" },
-      { "field_id": "411-DB", "field_name": "Prescriber ID", "action": "carry" },
-      { "field_id": "427-DR", "field_name": "Prescriber Last Name", "action": "carry" },
+      {
+        "field_id": "411-DB",
+        "field_name": "Prescriber ID (NPI)",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "NPI is mandatory in all F6 claims; DEA alone was accepted in D.0 but is no longer sufficient.",
+        "warn_message": "Prescriber NPI (411-DB) is absent. Claim cannot be converted to F6 without a valid 10-digit NPI.",
+        "warn_severity": "ERROR",
+        "warn_code": "NPI",
+        "warn_if_empty": true
+      },
+      {
+        "field_id": "466-EZ",
+        "field_name": "Prescriber ID Qualifier",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Must be 01 when 411-DB contains an NPI; carry unchanged from D.0.",
+        "condition": {
+          "if": {
+            "field": "PRE.411-DB",
+            "operator": "not_empty",
+            "value": null
+          }
+        }
+      },
+      {
+        "field_id": "427-DR",
+        "field_name": "Prescriber Last Name",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Optional field; carry unchanged if present in D.0."
+      },
       {
         "field_id": "364-2J",
         "field_name": "Prescriber First Name",
         "action": "add",
+        "mandatory_f6": false,
+        "notes": "New in F6; not present in D.0. Append to PRE segment with empty value if not available; emit WARN if absent.",
         "default_value": "",
-        "warn_if_empty": true,
-        "warn_code": "PF",
+        "warn_message": "Prescriber First Name (364-2J) is absent. Recommended for traceability; confirm supplier source.",
         "warn_severity": "WARN",
-        "warn_message": "Prescriber First Name (364-2J) is empty. Confirm supplier source for traceability.",
-        "notes": "Newly captured for controlled substance and prescriber traceability."
+        "d0_present": false,
+        "warn_code": "PF",
+        "warn_if_empty": true
+      },
+      {
+        "field_id": "498-PY",
+        "field_name": "Prescriber Phone",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Optional field; carry unchanged if present in D.0."
+      },
+      {
+        "field_id": "464-EX",
+        "field_name": "Prescriber DEA Number",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Required only when the prescription is for a controlled substance (Schedule II-V); emit ERROR if absent on such claims.",
+        "warn_message": "Prescriber DEA Number (464-EX) is absent for a controlled substance claim (Schedule II-V). DEA is required in this context.",
+        "warn_severity": "WARN",
+        "warn_condition": {
+          "if": {
+            "field": "CLM.407-D7",
+            "operator": "in",
+            "value": [
+              "2",
+              "3",
+              "4",
+              "5"
+            ]
+          }
+        },
+        "warn_code": "DEA",
+        "warn_if_empty": true
+      },
+      {
+        "field_id": "835-5C",
+        "field_name": "Prescriber Specialty",
+        "action": "add",
+        "mandatory_f6": false,
+        "notes": "New in F6; not present in D.0. Optional \u2014 append to PRE segment if value is available.",
+        "default_value": "",
+        "d0_present": false
       }
     ],
     "PRI": [
-      { "field_id": "409-D9", "field_name": "Ingredient Cost Submitted", "action": "carry" },
-      { "field_id": "412-DC", "field_name": "Dispensing Fee Submitted", "action": "carry" },
-      { "field_id": "426-DQ", "field_name": "Usual and Customary Charge", "action": "carry" },
-      { "field_id": "430-DU", "field_name": "Gross Amount Due", "action": "carry" },
-      { "field_id": "423-DN", "field_name": "Basis of Cost Determination", "action": "carry" },
+      {
+        "field_id": "409-D9",
+        "field_name": "Ingredient Cost Submitted",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Drug cost in cents with implied 2 decimal places; carry unchanged from D.0 to F6."
+      },
+      {
+        "field_id": "412-DC",
+        "field_name": "Dispensing Fee Submitted",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Pharmacy dispensing fee in cents; carry unchanged from D.0 to F6."
+      },
+      {
+        "field_id": "426-DQ",
+        "field_name": "Usual and Customary Charge",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Pharmacy's usual charge to the general public; carry unchanged if present."
+      },
+      {
+        "field_id": "430-DU",
+        "field_name": "Gross Amount Due",
+        "action": "carry",
+        "mandatory_f6": true,
+        "notes": "Total amount billed in cents; carry unchanged from D.0 to F6."
+      },
+      {
+        "field_id": "423-DN",
+        "field_name": "Basis of Cost Determination",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "How ingredient cost was calculated; carry unchanged if present."
+      },
+      {
+        "field_id": "433-DX",
+        "field_name": "Patient Paid Amount Submitted",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Amount collected from patient at point of sale; carry unchanged if present."
+      },
       {
         "field_id": "478-H7",
-        "field_name": "Real Time Benefit Reference",
-        "action": "add",
-        "default_value": "",
+        "field_name": "Basis of Reimbursement",
+        "action": "cases",
+        "mandatory_f6": false,
+        "notes": "NEW in F6 PRI segment. Maps from D.0 CLM field 423-DN (Basis of Cost Determination). Codes are identical \u2014 direct map. If 423-DN is present and non-empty, copy the value. If 423-DN is absent, emit WARN BRD. SOURCE: NCPDP F6 Editorial v02 \u00a73.11 PRI segment field reference.",
         "warn_if_empty": true,
-        "warn_code": "RT",
+        "warn_code": "BRD",
         "warn_severity": "WARN",
-        "warn_message": "Real Time Benefit Reference (478-H7) is empty. Confirm supplier source.",
-        "notes": "New field supporting real time benefit and formulary communication."
+        "warn_message": "Basis of Reimbursement (478-H7) is empty. Could not map from 423-DN (Basis of Cost Determination) \u2014 field was absent in the source D.0 transaction.",
+        "cases": [
+          {
+            "when": {
+              "operator": "present_and_nonempty",
+              "field": "CLM.423-DN"
+            },
+            "then": {
+              "action": "transform",
+              "transform": "COPY_FROM_FIELD",
+              "source_field": "CLM.423-DN"
+            }
+          },
+          {
+            "when": "default",
+            "then": {
+              "action": "add",
+              "default_value": ""
+            }
+          }
+        ]
+      },
+      {
+        "field_id": "481-HA",
+        "field_name": "Professional Service Fee Submitted",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Fee for pharmacist clinical services (MTM, etc.); carry unchanged if present."
+      },
+      {
+        "field_id": "562-J1",
+        "field_name": "Flat Sales Tax Amount",
+        "action": "carry",
+        "mandatory_f6": false,
+        "notes": "Sales tax in cents if applicable; carry unchanged if present."
       }
     ]
   }

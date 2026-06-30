@@ -1,0 +1,70 @@
+{
+  "transaction_type": "PRIOR_AUTH",
+  "description": "Prior authorization request",
+  "detection": {
+    "transaction_code": ["PA", "PA1", "21"],
+    "segment_present": ["PA"]
+  },
+  "segments": {
+    "HDR": [
+      { "field_id": "101-A1", "field_name": "BIN / IIN Number", "action": "transform", "transform": "ZERO_PAD_LEFT", "params": { "length": 8 } },
+      { "field_id": "102-A2", "field_name": "Version / Release Number", "action": "transform", "transform": "SET_VALUE", "value": "F6" },
+      { "field_id": "103-A3", "field_name": "Transaction Code", "action": "carry" },
+      { "field_id": "104-A4", "field_name": "Processor Control Number", "action": "carry" },
+      { "field_id": "109-A9", "field_name": "Transaction Count", "action": "carry" },
+      { "field_id": "201-B1", "field_name": "Service Provider ID", "action": "carry" },
+      { "field_id": "202-B2", "field_name": "Service Provider ID Qualifier", "action": "carry" },
+      { "field_id": "401-D1", "field_name": "Date of Service", "action": "carry" }
+    ],
+    "INS": [
+      { "field_id": "302-C2", "field_name": "Cardholder ID", "action": "carry" },
+      { "field_id": "301-C1", "field_name": "Group ID", "action": "carry" },
+      { "field_id": "306-C6", "field_name": "Patient Relationship Code", "action": "carry" },
+      { "field_id": "990-MG", "field_name": "Legacy Routing Code", "action": "remove" },
+      { "field_id": "367-2N", "field_name": "Benefit Network Indicator", "action": "add", "default_value": "", "warn_if_empty": true, "warn_code": "BNI", "warn_severity": "WARN", "warn_message": "Benefit Network Indicator (367-2N) required in F6." }
+    ],
+    "PAT": [
+      { "field_id": "304-C4", "field_name": "Date of Birth", "action": "carry" },
+      { "field_id": "305-C5", "field_name": "Patient Gender Code", "action": "carry" },
+      { "field_id": "310-CA", "field_name": "Patient First Name", "action": "carry" },
+      { "field_id": "311-CB", "field_name": "Patient Last Name", "action": "carry" }
+    ],
+    "CLM": [
+      { "field_id": "455-EM", "field_name": "Rx Reference Number Qualifier", "action": "carry" },
+      { "field_id": "402-D2", "field_name": "Rx Reference Number", "action": "carry" },
+      { "field_id": "436-E1", "field_name": "Product / Service ID Qualifier", "action": "carry" },
+      { "field_id": "407-D7", "field_name": "Product / Service ID", "action": "carry" },
+      { "field_id": "442-E7", "field_name": "Quantity Dispensed", "action": "carry" },
+      { "field_id": "403-D3", "field_name": "Fill Number", "action": "carry" },
+      { "field_id": "405-D5", "field_name": "Days Supply", "action": "carry" },
+      { "field_id": "406-D6", "field_name": "Compound Code", "action": "carry" },
+      { "field_id": "408-D8", "field_name": "Dispense As Written Code", "action": "carry" },
+      { "field_id": "414-DE", "field_name": "Date Prescription Written", "action": "carry" },
+      { "field_id": "419-DJ", "field_name": "Number of Refills Authorized", "action": "carry" },
+      { "field_id": "995-E2", "field_name": "Pharmacy Service Type", "action": "add", "default_value": "", "warn_if_empty": true, "warn_code": "PST", "warn_severity": "WARN", "warn_message": "Pharmacy Service Type (995-E2) mandatory in F6." },
+      { "field_id": "996-E3", "field_name": "Quantity Prescribed", "action": "add", "default_value": "", "warn_if_empty": true, "warn_code": "QP", "warn_severity": "WARN", "warn_message": "Quantity Prescribed (996-E3) mandatory in F6." }
+    ],
+    "PRE": [
+      { "field_id": "466-EZ", "field_name": "Prescriber ID Qualifier", "action": "carry" },
+      { "field_id": "411-DB", "field_name": "Prescriber ID (NPI)", "action": "carry" },
+      { "field_id": "427-DR", "field_name": "Prescriber Last Name", "action": "carry" },
+      { "field_id": "364-2J", "field_name": "Prescriber First Name", "action": "add", "default_value": "", "warn_if_empty": true, "warn_code": "PFN", "warn_severity": "WARN", "warn_message": "Prescriber First Name (364-2J) empty." }
+    ],
+    "PA": [
+      { "field_id": "498-GN", "field_name": "Prior Authorization Number Submitted", "action": "carry" },
+      { "field_id": "496-GL", "field_name": "Authorization Number Effective Date", "action": "carry" },
+      { "field_id": "497-GM", "field_name": "Authorization Number Expiration Date", "action": "carry" },
+      { "field_id": "499-GO", "field_name": "Prior Authorization Supporting Documentation", "action": "carry" },
+      { "field_id": "503-F3", "field_name": "Prior Authorization Reason Code", "action": "add", "default_value": "", "warn_if_empty": true, "warn_code": "PAR", "warn_severity": "WARN", "warn_message": "Prior Authorization Reason Code (503-F3) required in F6 for PA transactions." }
+    ],
+    "PRI": [
+      { "field_id": "409-D9", "field_name": "Patient Pay Amount", "action": "carry" },
+      { "field_id": "412-DC", "field_name": "Copay / Coinsurance Amount", "action": "carry" },
+      { "field_id": "426-DQ", "field_name": "Ingredient Cost Submitted", "action": "carry" },
+      { "field_id": "430-DU", "field_name": "Ingredient Cost Paid", "action": "carry" },
+      { "field_id": "423-DN", "field_name": "Basis of Cost Determination", "action": "carry" },
+      { "field_id": "433-DX", "field_name": "Total Amount Paid", "action": "carry" },
+      { "field_id": "478-H7", "field_name": "Basis of Reimbursement Determination", "action": "add", "default_value": "", "warn_if_empty": true, "warn_code": "BRD", "warn_severity": "WARN", "warn_message": "Basis of Reimbursement Determination (478-H7) mandatory in F6." }
+    ]
+  }
+}

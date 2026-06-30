@@ -33,6 +33,17 @@ SEGMENT_FILE_MAP: dict[str, str] = {
     'DOC': '02_specialty',
 }
 
+# Correct transaction_type per output file, independent of the CLI --transaction-type
+# argument. This prevents 06_compound.json from being written as RETAIL.
+FILE_TX_TYPE: dict[str, str] = {
+    '00_global':     'RETAIL',
+    '01_retail':     'RETAIL',
+    '02_specialty':  'SPECIALTY',
+    '04_cob':        'COB',
+    '06_compound':   'COMPOUND',
+    '10_prior_auth': 'PRIOR_AUTH',
+}
+
 
 class RuleWriter:
 
@@ -80,7 +91,7 @@ class RuleWriter:
             file_stem = SEGMENT_FILE_MAP.get(vr.segment_id, f'99_{vr.segment_id.lower()}')
             if file_stem not in rules_by_file:
                 rules_by_file[file_stem] = {
-                    'transaction_type': transaction_type,
+                    'transaction_type': FILE_TX_TYPE.get(file_stem, transaction_type),
                     '_meta': {
                         'source_pdf': source_pdf,
                         'extracted_at': datetime.utcnow().isoformat() + 'Z',
@@ -149,17 +160,34 @@ class RuleWriter:
         RULES_DIR.mkdir(parents=True, exist_ok=True)
         promoted: list[str] = []
 
-        skip_files = {'manifest.json', FLAGGED_FILE.name}
+        skip_files = {'manifest.json', FLAGGED_FILE.name, 'resolution_log.json'}
 
         for src in sorted(OUTPUT_DIR.glob('*.json')):
             if src.name in skip_files:
                 continue
+
+            # Safety: if destination already has a different transaction_type, block overwrite
             dst = RULES_DIR / src.name
-            if dst.exists() and not force:
-                answer = input(f'{dst} already exists. Overwrite? [y/N] ').strip()
-                if answer.lower() != 'y':
-                    print(f'  Skipped {dst.name}')
-                    continue
+            if dst.exists():
+                try:
+                    import json as _json
+                    src_tx  = _json.loads(src.read_text()).get('transaction_type', '')
+                    dst_tx  = _json.loads(dst.read_text()).get('transaction_type', '')
+                    if src_tx and dst_tx and src_tx != dst_tx:
+                        print(
+                            f'  BLOCKED {src.name}: source transaction_type={src_tx!r} '
+                            f'conflicts with destination transaction_type={dst_tx!r}. '
+                            f'Fix the extracted file before promoting.'
+                        )
+                        continue
+                except Exception:
+                    pass
+                if not force:
+                    answer = input(f'{dst} already exists. Overwrite? [y/N] ').strip()
+                    if answer.lower() != 'y':
+                        print(f'  Skipped {dst.name}')
+                        continue
+
             shutil.copy2(src, dst)
             promoted.append(str(dst))
             print(f'  {src.name} → rules/{src.name}')

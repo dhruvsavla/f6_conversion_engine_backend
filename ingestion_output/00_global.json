@@ -1,8 +1,8 @@
 {
   "transaction_type": "RETAIL",
   "_meta": {
-    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpiubr4iva_ACME_PBM_F6_Implementation_Guide.pdf",
-    "extracted_at": "2026-06-26T22:14:08.558647Z",
+    "source_pdf": "/var/folders/rl/0rqb8qp17rx6ystxlgj21kk00000gn/T/tmpq2p8ygw9_ACME_PBM_F6_Implementation_Guide.pdf",
+    "extracted_at": "2026-06-28T07:31:30.984105Z",
     "extraction_warnings": []
   },
   "segments": {
@@ -12,53 +12,41 @@
         "field_name": "BIN / IIN Number",
         "action": "transform",
         "mandatory_f6": true,
-        "notes": "BIN must be exactly 8 digits; if source D.0 contains a 6-digit BIN, zero-pad left to produce 8-digit IIN.",
-        "transform": "ZERO_PAD_LEFT",
+        "notes": "If source D.0 contains a 6-digit BIN, zero-pad left to produce an 8-digit IIN; ACME BIN is 00610279.",
         "params": {
           "length": 8
         },
-        "value": "00610279"
+        "transform": "ZERO_PAD_LEFT"
       },
       {
         "field_id": "102-A2",
         "field_name": "Version/Release Number",
         "action": "transform",
         "mandatory_f6": true,
-        "notes": "Field MUST be updated from 'D0' to 'F6' on every transaction; claims with 'D0' will be rejected with code 02.",
-        "warn_if_empty": true,
-        "transform": "SET_VALUE",
-        "warn_message": "Version/Release Number must be 'F6'. Claims containing 'D0' will be rejected with code 02 (Invalid Version).",
-        "warn_severity": "ERROR",
+        "notes": "MUST be updated from 'D0' to 'F6' on every transaction; claims with 'D0' will be rejected with code 02.",
         "value": "F6",
-        "warn_code": "02"
+        "transform": "SET_VALUE"
       },
       {
         "field_id": "103-A3",
         "field_name": "Transaction Code",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Transaction code carried unchanged from D.0; valid values are B1, B2, E1, PA.",
-        "map": {
-          "B1": "Claim Billing",
-          "B2": "Reversal",
-          "E1": "Eligibility",
-          "PA": "Prior Auth"
-        }
+        "notes": "Valid values are B1=Claim Billing, B2=Reversal, E1=Eligibility, PA=Prior Auth; carry unchanged from D.0."
       },
       {
         "field_id": "104-A4",
         "field_name": "Processor Control Number",
         "action": "carry",
         "mandatory_f6": false,
-        "notes": "ACME PCN is PCN4501; carry unchanged if present in D.0, field is optional.",
-        "d0_present": true
+        "notes": "ACME PCN is PCN4501; carry unchanged if present in D.0; field is optional."
       },
       {
         "field_id": "109-A9",
         "field_name": "Transaction Count",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Number of claim transactions in the request; usually 1 for real-time processing, carried unchanged."
+        "notes": "Number of claim transactions in the request; usually 1 for real-time processing."
       },
       {
         "field_id": "201-B1",
@@ -72,18 +60,14 @@
         "field_name": "Service Provider ID Qualifier",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Qualifier for Service Provider ID; valid values 01=NPI and 05=NCPDP Provider ID; carry unchanged from D.0.",
-        "map": {
-          "01": "NPI",
-          "05": "NCPDP Provider ID"
-        }
+        "notes": "Valid values are 01=NPI and 05=NCPDP Provider ID; carry unchanged from D.0."
       },
       {
         "field_id": "401-D1",
         "field_name": "Date of Service",
         "action": "carry",
         "mandatory_f6": true,
-        "notes": "Date prescription was dispensed in CCYYMMDD format; carry unchanged from D.0."
+        "notes": "Format must be CCYYMMDD representing the date the prescription was dispensed; carry unchanged from D.0."
       }
     ]
   }

@@ -22,8 +22,12 @@
       { "field_id": "990-MG", "field_name": "Other Payer BIN (legacy position)", "action": "remove", "notes": "Carried in the restructured COB segment under F6." }
     ],
     "CLM": [
-      { "field_id": "455-EM", "field_name": "Rx / Service Reference Number Qualifier", "action": "carry" },
-      { "field_id": "402-D2", "field_name": "Rx / Service Reference Number", "action": "carry" }
+      { "field_id": "455-EM", "field_name": "Prescription / Service Reference Number", "action": "carry", "mandatory_f6": true },
+      { "field_id": "402-D2", "field_name": "Product / Service ID (NDC)", "action": "transform", "transform": "REMOVE_HYPHENS", "mandatory_f6": true },
+      { "field_id": "408-D8", "field_name": "DAW / Product Selection Code", "action": "carry", "mandatory_f6": false, "notes": "Optional on reversal — carry if present, skip if absent." },
+      { "field_id": "418-DI", "field_name": "Quantity Prescribed", "action": "carry", "mandatory_f6": false, "notes": "Not required on reversals — carry if present, skip if absent." },
+      { "field_id": "147-U7", "field_name": "Pharmacy Service Type", "action": "carry", "mandatory_f6": false, "notes": "Not auto-derived on reversals — carry if present, skip if absent." },
+      { "field_id": "995-E2", "field_name": "Route of Administration", "action": "carry", "mandatory_f6": false, "notes": "Not added on reversals — carry if present, skip if absent." }
     ]
   }
 }

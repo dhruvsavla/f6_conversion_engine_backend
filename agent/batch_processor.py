@@ -53,7 +53,7 @@ def process_batch_background(job_id: str, raw_text: str) -> None:
 
     # Load the ruleset once up front — reloading per claim would be very slow
     try:
-        ruleset = rules_reader.load_all(str(RULES_DIR))
+        ruleset = rules_reader.load_all_from_db()
     except Exception as e:
         job["status"] = "error"
         job["errors"].append(f"Failed to load rules: {e}")
