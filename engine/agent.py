@@ -136,10 +136,7 @@ class ConversionAgent:
 
     async def _execute(self, job: ConversionJob) -> None:
         db_ops.mark_conversion_processing(job.conversion_id)
-        if job.direction == 'D0_TO_F6':
-            await self._execute_forward(job)
-        else:
-            await self._execute_reverse(job)
+        await self._execute_forward(job)
 
     async def _execute_forward(self, job: ConversionJob) -> None:
         """
@@ -295,28 +292,3 @@ class ConversionAgent:
         if job.batch_id:
             db_ops.update_batch_progress(job.batch_id)
 
-    async def _execute_reverse(self, job: ConversionJob) -> None:
-        """F6 → D.0 conversion. Runs the existing reverse pipeline in a thread."""
-        rule_set_name = self.cache.rule_set_name or 'default'
-
-        def _pipeline(input_text: str):
-            import asyncio as _asyncio
-            from agent.reverse_orchestrator import ReverseOrchestrator
-            return _asyncio.run(ReverseOrchestrator().convert(input_text))
-
-        result = await asyncio.to_thread(_pipeline, job.input_text)
-
-        active_rs = db_ops.get_active_rule_set()
-        db_ops.complete_conversion(
-            conversion_id    = job.conversion_id,
-            transaction_type = result.transaction_type,
-            d0_output        = result.d0_output,
-            summary          = result.audit['summary'],
-            rule_set_version = active_rs['name'] if active_rs else rule_set_name,
-        )
-        db_ops.insert_audit_entries(job.conversion_id, result.audit['entries'])
-        db_ops.insert_audit_findings(job.conversion_id, result.audit['findings'])
-        db_ops.insert_agent_steps(job.conversion_id, result.agent_steps)
-
-        if job.batch_id:
-            db_ops.update_batch_progress(job.batch_id)

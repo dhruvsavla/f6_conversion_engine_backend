@@ -1,7 +1,7 @@
 """
 database.py
 
-SQLite database layer using Python's built-in sqlite3.
+PostgreSQL database layer using psycopg2.
 No ORM — direct SQL for transparency and control.
 
 Call init_db() once on startup to create all tables.
@@ -10,19 +10,44 @@ Call seed_from_rules_folder() after init_db() to bootstrap from rules/ JSON file
 
 import json
 import os
-import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = os.environ.get('NCPDP_DB_PATH', './ncpdp_converter.db')
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
 
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row           # rows behave like dicts
-    conn.execute('PRAGMA journal_mode=WAL')   # concurrent reads while writing
-    conn.execute('PRAGMA foreign_keys=ON')
-    return conn
+class _Conn:
+    """Thin wrapper so db_ops.py can call conn.execute() like sqlite3."""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def execute(self, sql: str, params=None):
+        cur = self._raw.cursor(cursor_factory=RealDictCursor)
+        cur.execute(sql, params or ())
+        return cur
+
+    def executemany(self, sql: str, seq):
+        cur = self._raw.cursor()
+        cur.executemany(sql, seq)
+        return cur
+
+    def commit(self):
+        self._raw.commit()
+
+    def rollback(self):
+        self._raw.rollback()
+
+    def close(self):
+        self._raw.close()
+
+
+def get_connection() -> _Conn:
+    raw = psycopg2.connect(DATABASE_URL)
+    return _Conn(raw)
 
 
 @contextmanager
@@ -41,11 +66,8 @@ def db():
 
 def init_db():
     """Create all tables if they don't exist. Safe to call on every startup."""
-    with db() as conn:
-        conn.executescript("""
-
-        -- ── Batches ──────────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS batches (
+    statements = [
+        """CREATE TABLE IF NOT EXISTS batches (
             id              TEXT PRIMARY KEY,
             name            TEXT NOT NULL,
             status          TEXT NOT NULL DEFAULT 'pending',
@@ -54,10 +76,8 @@ def init_db():
             failed_files    INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT NOT NULL,
             completed_at    TEXT
-        );
-
-        -- ── Conversions ───────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS conversions (
+        )""",
+        """CREATE TABLE IF NOT EXISTS conversions (
             id                  TEXT PRIMARY KEY,
             batch_id            TEXT REFERENCES batches(id),
             filename            TEXT NOT NULL,
@@ -77,12 +97,13 @@ def init_db():
             errors_count        INTEGER DEFAULT 0,
             created_at          TEXT NOT NULL,
             completed_at        TEXT,
-            rule_set_version    TEXT
-        );
-
-        -- ── Audit Entries ─────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS audit_entries (
-            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_set_version    TEXT,
+            direction           TEXT NOT NULL DEFAULT 'D0_TO_F6',
+            input_text          TEXT NOT NULL DEFAULT '',
+            d0_output           TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS audit_entries (
+            id                   SERIAL PRIMARY KEY,
             conversion_id        TEXT NOT NULL REFERENCES conversions(id) ON DELETE CASCADE,
             segment              TEXT NOT NULL,
             occurrence           INTEGER NOT NULL DEFAULT 1,
@@ -97,11 +118,9 @@ def init_db():
             condition_evaluated  INTEGER NOT NULL DEFAULT 0,
             condition_passed     INTEGER NOT NULL DEFAULT 1,
             condition_expression TEXT NOT NULL DEFAULT ''
-        );
-
-        -- ── Audit Findings ────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS audit_findings (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        )""",
+        """CREATE TABLE IF NOT EXISTS audit_findings (
+            id            SERIAL PRIMARY KEY,
             conversion_id TEXT NOT NULL REFERENCES conversions(id) ON DELETE CASCADE,
             severity      TEXT NOT NULL,
             code          TEXT NOT NULL DEFAULT '',
@@ -109,21 +128,17 @@ def init_db():
             segment       TEXT NOT NULL DEFAULT '',
             field_id      TEXT NOT NULL DEFAULT '',
             occurrence    INTEGER NOT NULL DEFAULT 1
-        );
-
-        -- ── Agent Steps ───────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS agent_steps (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        )""",
+        """CREATE TABLE IF NOT EXISTS agent_steps (
+            id            SERIAL PRIMARY KEY,
             conversion_id TEXT NOT NULL REFERENCES conversions(id) ON DELETE CASCADE,
             step_order    INTEGER NOT NULL,
             step_id       TEXT NOT NULL,
             label         TEXT NOT NULL,
             status        TEXT NOT NULL,
             detail        TEXT NOT NULL DEFAULT ''
-        );
-
-        -- ── Rule Sets ─────────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS rule_sets (
+        )""",
+        """CREATE TABLE IF NOT EXISTS rule_sets (
             id            TEXT PRIMARY KEY,
             name          TEXT NOT NULL,
             description   TEXT NOT NULL DEFAULT '',
@@ -133,10 +148,8 @@ def init_db():
             updated_at    TEXT NOT NULL,
             source_pdf    TEXT NOT NULL DEFAULT '',
             total_rules   INTEGER NOT NULL DEFAULT 0
-        );
-
-        -- ── Rules ─────────────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS rules (
+        )""",
+        """CREATE TABLE IF NOT EXISTS rules (
             id                TEXT PRIMARY KEY,
             rule_set_id       TEXT NOT NULL REFERENCES rule_sets(id) ON DELETE CASCADE,
             transaction_type  TEXT NOT NULL,
@@ -152,10 +165,8 @@ def init_db():
             notes             TEXT NOT NULL DEFAULT '',
             created_at        TEXT NOT NULL,
             updated_at        TEXT NOT NULL
-        );
-
-        -- ── Validations ───────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS validations (
+        )""",
+        """CREATE TABLE IF NOT EXISTS validations (
             id               TEXT PRIMARY KEY,
             transaction_type TEXT NOT NULL,
             overall_status   TEXT NOT NULL,
@@ -169,10 +180,8 @@ def init_db():
             checks_json      TEXT NOT NULL DEFAULT '[]',
             parse_errors_json TEXT NOT NULL DEFAULT '[]',
             created_at       TEXT NOT NULL
-        );
-
-        -- ── Rule Resolutions ──────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS rule_resolutions (
+        )""",
+        """CREATE TABLE IF NOT EXISTS rule_resolutions (
             id                TEXT PRIMARY KEY,
             resolution        TEXT NOT NULL,
             entry_id          TEXT NOT NULL,
@@ -184,40 +193,49 @@ def init_db():
             issues_json       TEXT NOT NULL DEFAULT '[]',
             resolved_at       TEXT NOT NULL,
             resolved_by       TEXT NOT NULL DEFAULT 'user'
-        );
-        CREATE INDEX IF NOT EXISTS idx_resolutions_resolved
-            ON rule_resolutions(resolved_at DESC);
-
-        -- ── Indexes ───────────────────────────────────────────────────────
-        CREATE INDEX IF NOT EXISTS idx_conversions_batch   ON conversions(batch_id);
-        CREATE INDEX IF NOT EXISTS idx_conversions_status  ON conversions(status);
-        CREATE INDEX IF NOT EXISTS idx_conversions_created ON conversions(created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_audit_entries_conv  ON audit_entries(conversion_id);
-        CREATE INDEX IF NOT EXISTS idx_audit_findings_conv ON audit_findings(conversion_id);
-        CREATE INDEX IF NOT EXISTS idx_agent_steps_conv    ON agent_steps(conversion_id);
-        CREATE INDEX IF NOT EXISTS idx_rules_set           ON rules(rule_set_id, transaction_type, segment_id);
-        CREATE INDEX IF NOT EXISTS idx_validations_created ON validations(created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_validations_status  ON validations(overall_status);
-
-        """)
-    print(f'[DB] Initialized: {DB_PATH}')
+        )""",
+        """CREATE TABLE IF NOT EXISTS llm_decisions (
+            id               SERIAL PRIMARY KEY,
+            conversion_id    TEXT NOT NULL REFERENCES conversions(id) ON DELETE CASCADE,
+            field_id         TEXT NOT NULL DEFAULT '',
+            field_name       TEXT NOT NULL DEFAULT '',
+            segment_id       TEXT NOT NULL DEFAULT '',
+            resolved_value   TEXT NOT NULL DEFAULT '',
+            original_value   TEXT NOT NULL DEFAULT '',
+            reasoning        TEXT NOT NULL DEFAULT '',
+            confidence       TEXT NOT NULL DEFAULT '',
+            finding_code     TEXT NOT NULL DEFAULT '',
+            action           TEXT NOT NULL DEFAULT '',
+            llm_model        TEXT NOT NULL DEFAULT '',
+            phi_was_masked   INTEGER NOT NULL DEFAULT 1,
+            was_overridden   INTEGER NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_resolutions_resolved ON rule_resolutions(resolved_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_conversions_batch    ON conversions(batch_id)",
+        "CREATE INDEX IF NOT EXISTS idx_conversions_status   ON conversions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_conversions_created  ON conversions(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_entries_conv   ON audit_entries(conversion_id)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_findings_conv  ON audit_findings(conversion_id)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_steps_conv     ON agent_steps(conversion_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rules_set            ON rules(rule_set_id, transaction_type, segment_id)",
+        "CREATE INDEX IF NOT EXISTS idx_validations_created  ON validations(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_validations_status   ON validations(overall_status)",
+        "CREATE INDEX IF NOT EXISTS idx_llm_conv             ON llm_decisions(conversion_id)",
+    ]
+    with db() as conn:
+        for stmt in statements:
+            conn.execute(stmt)
+    print('[DB] Initialized PostgreSQL database')
 
 
 def migrate_db():
-    """
-    Safe incremental migrations. Each ALTER TABLE is wrapped in try/except
-    because sqlite3 raises OperationalError if the column already exists.
-    Call after init_db() on every startup.
-    """
-    column_migrations = [
-        "ALTER TABLE conversions ADD COLUMN direction TEXT NOT NULL DEFAULT 'D0_TO_F6'",
-        "ALTER TABLE conversions ADD COLUMN input_text TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE conversions ADD COLUMN d0_output TEXT",
-    ]
-    structural_migrations = [
-        # LLM hybrid audit trail — created here (not init_db) so existing DBs get it safely
+    """Incremental migrations for existing databases. Safe to call on every startup."""
+    migrations = [
+        "ALTER TABLE conversions ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'D0_TO_F6'",
+        "ALTER TABLE conversions ADD COLUMN IF NOT EXISTS input_text TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE conversions ADD COLUMN IF NOT EXISTS d0_output TEXT",
         """CREATE TABLE IF NOT EXISTS llm_decisions (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            id               SERIAL PRIMARY KEY,
             conversion_id    TEXT NOT NULL REFERENCES conversions(id) ON DELETE CASCADE,
             field_id         TEXT NOT NULL DEFAULT '',
             field_name       TEXT NOT NULL DEFAULT '',
@@ -235,16 +253,8 @@ def migrate_db():
         "CREATE INDEX IF NOT EXISTS idx_llm_conv ON llm_decisions(conversion_id)",
     ]
     with db() as conn:
-        for ddl in column_migrations:
-            try:
-                conn.execute(ddl)
-            except Exception:
-                pass  # column already exists
-        for ddl in structural_migrations:
-            try:
-                conn.execute(ddl)
-            except Exception:
-                pass  # table/index already exists
+        for ddl in migrations:
+            conn.execute(ddl)
 
 
 def seed_from_rules_folder(rules_dir: str) -> None:
@@ -255,7 +265,7 @@ def seed_from_rules_folder(rules_dir: str) -> None:
     import db_ops  # local import avoids circular dependency at module level
 
     with db() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM rule_sets").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) AS count FROM rule_sets").fetchone()['count']
         if count > 0:
             return  # already seeded — don't overwrite
 

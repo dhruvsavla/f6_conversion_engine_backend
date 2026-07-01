@@ -237,7 +237,11 @@ class F6Validator:
                 field_id   = rule.get('field_id', '')
                 field_name = rule.get('field_name', field_id)
                 segs       = tx.get_segments(seg_id)
-                occ_list   = segs if segs else [None]
+                if not segs:
+                    # Segment not present; structural check already flags missing required segments.
+                    # Don't fire mandatory field errors for segments that don't exist.
+                    continue
+                occ_list   = segs
 
                 for occ_idx, _ in enumerate(occ_list, 1):
                     val = tx.get_field(seg_id, field_id, occurrence=occ_idx)

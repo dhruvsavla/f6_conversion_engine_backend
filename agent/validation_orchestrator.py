@@ -67,7 +67,7 @@ class ValidationOrchestrator:
 
         # ── Step 2: Detect transaction type ───────────────────────────────────
         try:
-            from .reverse_orchestrator import detect_tx_type
+            from .transaction_detector import detect as detect_tx_type
             tx_type = detect_tx_type(tx)
             emit('detecting', 'Detecting transaction type', 'complete', tx_type)
         except Exception as exc:

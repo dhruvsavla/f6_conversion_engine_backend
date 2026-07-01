@@ -100,7 +100,7 @@ class RuleCache:
             rows = conn.execute("""
                 SELECT transaction_type, segment_id, rule_json
                 FROM rules
-                WHERE rule_set_id = ?
+                WHERE rule_set_id = %s
                 ORDER BY transaction_type, segment_id, field_id
             """, (self._rule_set_id,)).fetchall()
 

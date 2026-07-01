@@ -301,6 +301,13 @@ INS_RULES = [
             "New field in F6. Not present in D.0. "
             "Added as empty field in F6 output. Payer populates on response."
         ),
+        warn_if_empty=True,
+        warn_code="BNI",
+        warn_severity="WARN",
+        warn_message=(
+            "Benefit Network Indicator (367-2N) is new in F6. "
+            "Not present in D.0. Confirm value with payer."
+        ),
     ),
 
     derived(
@@ -498,35 +505,38 @@ CLM_RULES = [
 
     confirmed(
         field_id="C90-KH", field_name="LTPAC Billing Methodology",
-        segment_id="CLM", action="add", mandatory=False,
+        segment_id="CLM", action="add", tx_type="LTC", mandatory=False,
         default_value="",
         notes=(
-            "NEW IN F6. Billing methodology for LTPAC claims. "
-            "1=Full qty on date dispensed, 2=Post-consumption (monthly), "
-            "3=Pre-consumption (billed before dispensings complete). "
+            "NEW IN F6. Identifies billing methodology for LTPAC claims. "
+            "Values (from ECL): 1=Full quantity as dispensed on date of dispensing, "
+            "2=Post-consumption billing (aggregated monthly), "
+            "3=Pre-consumption billing (billed before all dispensings complete). "
+            "Only applicable to LTC (Long Term Care) claims — "
+            "patient residence must be 03/06/09/31/32/33. "
             "SOURCE: F6 Editorial v02 §3.7.2."
         ),
     ),
 
     confirmed(
         field_id="C92-KM", field_name="Number of LTPAC Dispensing Events",
-        segment_id="CLM", action="add", mandatory=False,
+        segment_id="CLM", action="add", tx_type="LTC", mandatory=False,
         default_value="",
         notes=(
             "NEW IN F6. Count of dispensing events comprising the claim. "
-            "Example: 26-day supply = 4 dispensing events. "
+            "Only applicable to LTC claims. "
             "SOURCE: F6 Editorial v02 §3.7.2."
         ),
     ),
 
     confirmed(
         field_id="C91-KK", field_name="LTPAC Dispense Frequency",
-        segment_id="CLM", action="add", mandatory=False,
+        segment_id="CLM", action="add", tx_type="LTC", mandatory=False,
         default_value="",
         notes=(
-            "NEW IN F6. Interval pattern of dispensing/resupply. "
-            "LTC reject codes: 597 (packaging mismatch), 613 (missing/inappropriate), "
-            "DF4 (invalid combination). SOURCE: F6 Editorial v02 §3.7.2."
+            "NEW IN F6. Typical interval pattern of dispensing or resupply. "
+            "Only applicable to LTC claims. "
+            "SOURCE: F6 Editorial v02 §3.7.2."
         ),
     ),
 
@@ -574,6 +584,23 @@ CLM_RULES = [
             "Prior Authorization Number returned by payer. "
             "In F6 may appear in CLM or in the PA segment (498-GN). "
             "Required when SCC=42/43 for specialty claims. Carry unchanged."
+        ),
+    ),
+
+    inferred(
+        field_id="994-E1", field_name="Medicare Part D Coverage Code",
+        segment_id="CLM", action="add", tx_type="MEDICARE_PART_D", mandatory=False,
+        default_value="",
+        notes=(
+            "New in F6 CLM segment for Medicare Part D claims. "
+            "[INFERRED] Sourced from rules/08_medicare_part_d.json — "
+            "verify against full NCPDP Implementation Guide when available."
+        ),
+        warn_if_empty=True,
+        warn_code="MPD",
+        warn_severity="WARN",
+        warn_message=(
+            "Medicare Part D Coverage Code (994-E1) required for Part D claims in F6."
         ),
     ),
 ]
@@ -630,6 +657,18 @@ PRE_RULES = [
             "VALIDATION: regex [A-Z]{2}\\d{7}. Carry unchanged. "
             "CORRECTED: field ID was previously misassigned as 441-E6, "
             "which is actually DUR Result of Service Code."
+        ),
+    ),
+
+    inferred(
+        field_id="835-5C", field_name="Prescriber Specialty",
+        segment_id="PRE", action="add", mandatory=False,
+        default_value="",
+        notes=(
+            "New in F6; not present in D.0. "
+            "Optional — append to PRE segment if value is available. "
+            "[INFERRED] Sourced from rules/01_retail.json — "
+            "verify against full NCPDP Implementation Guide when available."
         ),
     ),
 ]
@@ -1277,6 +1316,12 @@ MANDATORY_OVERRIDES: dict[str, dict[str, frozenset]] = {
             "147-U7", "403-D3", "405-D5", "406-D6", "407-D7", "408-D8",
             "409-D9", "412-DC", "418-DI", "419-DJ", "423-DN", "430-DU",
         }),
+        # Fix 3: 466-EZ is mandatory for billing types but not on a reversal
+        # (no prescriber context needed to reverse a claim by reference number).
+        "PRE": frozenset({"466-EZ"}),
+        # Fix 4: 367-2N/694-ZJ have warn_if_empty for billing types; suppress
+        # on reversals where network indicator context isn't available.
+        "INS": frozenset({"367-2N", "694-ZJ"}),
     },
     "ELIGIBILITY": {
         "CLM": frozenset({
@@ -1284,6 +1329,16 @@ MANDATORY_OVERRIDES: dict[str, dict[str, frozenset]] = {
             "408-D8", "409-D9", "412-DC", "414-DE", "418-DI", "419-DJ",
             "423-DN", "430-DU", "455-EM",
         }),
+        # Fix 3: 466-EZ doesn't apply to eligibility-only transactions.
+        "PRE": frozenset({"466-EZ"}),
+        # Fix 4: no network indicator context on a coverage eligibility check.
+        "INS": frozenset({"367-2N", "694-ZJ"}),
+    },
+    # Fix 2: PST (147-U7) cannot be deterministically derived for prior auth
+    # requests — the accompanying billing claim type isn't known here.
+    # LLM resolver will infer from context if needed.
+    "PRIOR_AUTH": {
+        "CLM": frozenset({"147-U7"}),
     },
 }
 

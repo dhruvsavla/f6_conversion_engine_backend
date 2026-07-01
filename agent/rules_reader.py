@@ -127,8 +127,8 @@ def load_all_from_db(rule_set_id: Optional[str] = None) -> RuleSet:
             """
             SELECT transaction_type, segment_id, field_id, rule_json
             FROM rules
-            WHERE rule_set_id = ?
-            ORDER BY rowid
+            WHERE rule_set_id = %s
+            ORDER BY segment_id, field_id
             """,
             (rule_set_id,),
         ).fetchall()

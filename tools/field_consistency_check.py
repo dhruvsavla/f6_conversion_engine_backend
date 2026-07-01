@@ -27,7 +27,6 @@ SEEDER_FILE = BACKEND_ROOT / "seeds" / "f6_standards_seeder.py"
 FILES_TO_CHECK = [
     BACKEND_ROOT / "agent" / "f6_validator.py",
     BACKEND_ROOT / "agent" / "field_mapper.py",
-    BACKEND_ROOT / "agent" / "reverse_field_mapper.py",
     BACKEND_ROOT / "engine" / "agent.py",
 ]
 

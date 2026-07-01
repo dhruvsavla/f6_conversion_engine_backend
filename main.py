@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -17,17 +18,20 @@ from agent.batch_processor import BATCH_JOBS, process_batch_background, start_ba
 from ingestion.ingest_api import router as ingest_router
 from database import init_db, seed_from_rules_folder, migrate_db
 import db_ops
-from agent.reverse_orchestrator import ReverseOrchestrator
 from agent.validation_orchestrator import ValidationOrchestrator
 from engine.agent_pool import get_pool
 from engine.job_queue import make_job, Priority
 
-reverse_orchestrator     = ReverseOrchestrator()
 validation_orchestrator  = ValidationOrchestrator()
 
 app = FastAPI(title="NCPDP D.0 → F6 Conversion Engine", version="3.0.0")
 app.include_router(ingest_router)
 
+_extra_origins = [
+    o.strip()
+    for o in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,6 +39,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
+        *_extra_origins,
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -144,6 +149,11 @@ SAMPLES: dict[str, str] = {
 
 class ConvertRequest(BaseModel):
     d0_text: str
+
+
+class CorrectRequest(BaseModel):
+    f6_text:  str
+    filename: Optional[str] = "manual_input_f6"
 
 
 @app.on_event("startup")
@@ -809,93 +819,284 @@ async def sample_f6(type: str = "RETAIL"):
     return {"f6_text": F6_SAMPLES[tx_type]}
 
 
-# ── F6 → D.0 Reverse Conversion ──────────────────────────────────────────────
 
-@app.post("/api/reverse-convert")
-async def reverse_convert(body: dict):
-    """Convert F6 → D.0. Body: {f6_text, filename?}. Persists to DB."""
-    f6_text  = (body.get("f6_text") or "").strip()
-    filename = body.get("filename") or "manual_f6_input"
+# ── F6 → F6 Correction ───────────────────────────────────────────────────────
 
-    if not f6_text:
-        raise HTTPException(400, "f6_text is required")
+async def _stream_f6_correction(f6_text: str, filename: str):
+    """
+    SSE generator for the F6 correction pipeline:
+      1. Parse F6 + detect transaction type
+      2. Validate against active rule set
+      3. If findings exist → LLM correction layer
+      4. Merge corrections into F6 text
+      5. Re-validate corrected output
+      6. Stream result with correction audit
+    """
+    import asyncio as _asyncio
 
-    active_rs = db_ops.get_active_rule_set()
-    cid = db_ops.create_conversion(
-        filename=filename,
-        d0_input='',
-        direction='F6_TO_D0',
-        input_text=f6_text,
-    )
-    db_ops.mark_conversion_processing(cid)
+    def _emit(type_: str, data: dict) -> str:
+        return f"data: {json.dumps({'type': type_, 'data': data})}\n\n"
 
+    def _step(step_id: str, label: str, status: str, detail: str = "") -> str:
+        return _emit("step", {"id": step_id, "label": label, "status": status, "detail": detail})
+
+    # ── Step 1: Parse + detect ────────────────────────────────────────────────
+    yield _step("parse", "Parsing F6", "running")
     try:
-        result = await reverse_orchestrator.convert(f6_text)
+        from agent.f6_parser import parse_f6
+        from agent.transaction_detector import detect as _detect
+        tx      = await _asyncio.to_thread(parse_f6, f6_text)
+        tx_type = _detect(tx)
+    except Exception as exc:
+        yield _step("parse", "Parsing F6", "error", str(exc))
+        yield _emit("error", {"message": f"Parse failed: {exc}"})
+        return
+    yield _step("parse", "Parsing F6", "complete",
+                f"{len(tx.segments)} segments, {tx_type}")
 
-        db_ops.complete_conversion(
-            conversion_id=cid,
-            transaction_type=result.transaction_type,
-            f6_output='',
-            d0_output=result.d0_output,
-            summary=result.audit['summary'],
-            rule_set_version=active_rs['name'] if active_rs else 'default',
+    # ── Step 2: Validate ──────────────────────────────────────────────────────
+    yield _step("validate", "Validating F6", "running")
+    try:
+        from agent.f6_validator import F6Validator
+        import db_ops as _db_ops
+        active_rs = _db_ops.get_active_rule_set()
+        rs_id     = active_rs['id'] if active_rs else None
+        validator = F6Validator()
+        report    = await _asyncio.to_thread(validator.validate, tx, tx_type, rs_id)
+    except Exception as exc:
+        yield _step("validate", "Validating F6", "error", str(exc))
+        yield _emit("error", {"message": f"Validation failed: {exc}"})
+        return
+
+    pre_summary = report.summary
+    pre_score   = pre_summary["score"]
+    findings_all = [c for c in report.checks if c.status in ("ERROR", "WARN")]
+    errors_pre   = [c for c in report.checks if c.status == "ERROR"]
+
+    yield _step("validate", "Validating F6", "complete",
+                f"{len(errors_pre)} errors · {pre_summary['warnings']} warnings · score {pre_score}")
+
+    if not findings_all:
+        unchanged_entries = [
+            {
+                "segment":       c.segment or "",
+                "occurrence":    1,
+                "from_field_id": c.field_id,
+                "to_field_id":   c.field_id,
+                "field_name":    c.field_name or c.field_id,
+                "change_type":   "carried",
+                "old_value":     c.actual or "",
+                "new_value":     c.actual or "",
+                "rule_applied":  "PASS",
+                "notes":         c.message or "Field is valid",
+                "condition_evaluated": False,
+                "condition_passed": True,
+                "condition_expression": "",
+            }
+            for c in report.checks if c.status == "PASS" and c.field_id
+        ]
+        yield _emit("result", {
+            "f6_output":        f6_text,
+            "status":           "VALID",
+            "corrections":      [],
+            "unresolvable":     [],
+            "pre_score":        pre_score,
+            "post_score":       pre_score,
+            "transaction_type": tx_type,
+            "audit": {
+                "entries": unchanged_entries,
+                "summary": {"corrected": 0, "filled": 0, "formatted": 0, "unchanged": len(unchanged_entries), "unresolvable": 0},
+            },
+        })
+        return
+
+    # ── Step 3: LLM correction ────────────────────────────────────────────────
+    yield _step("llm_correct", "LLM Correction", "running",
+                f"Sending {len(findings_all)} findings to Claude")
+    try:
+        from engine.phi_masker import mask_transaction, unmask_llm_output
+        from engine.llm_resolver import get_resolver, LLMDecision, LLM_CORRECTION_SYSTEM_PROMPT
+
+        masked_f6, mask_map = await _asyncio.to_thread(mask_transaction, f6_text)
+
+        findings_for_llm = [
+            {
+                "severity":   c.status,
+                "code":       c.check_id,
+                "field_id":   c.field_id,
+                "field_name": getattr(c, "field_name", ""),
+                "segment":    c.segment,
+                "message":    c.message,
+                "actual":     c.actual,
+            }
+            for c in findings_all
+        ]
+
+        finding_lines = "\n".join(
+            f"  [{f['severity']}] {f['field_id']} in {f['segment']}: {f['message']} (code={f['code']})"
+            for f in findings_for_llm[:20]
         )
-        db_ops.insert_audit_entries(cid, result.audit['entries'])
-        db_ops.insert_audit_findings(cid, result.audit['findings'])
-        db_ops.insert_agent_steps(cid, result.agent_steps)
+        correction_user_prompt = (
+            f"F6 transaction type: {tx_type}\n\n"
+            f"Validation findings requiring correction:\n{finding_lines}\n\n"
+            f"F6 transaction (PHI has been masked for HIPAA compliance):\n"
+            f"<transaction>\n{masked_f6[:4000]}\n</transaction>\n\n"
+            "For each finding listed above, provide the corrected value. "
+            "Return ONLY the JSON array."
+        )
 
-        return {
-            'conversion_id':    cid,
-            'transaction_type': result.transaction_type,
-            'd0_output':        result.d0_output,
-            'f6_input':         f6_text,
-            'agent_steps':      result.agent_steps,
-            'audit':            result.audit,
+        resolver     = get_resolver()
+        raw_decisions = []
+        if resolver.is_enabled():
+            raw_decisions = await resolver.resolve(
+                masked_text   = masked_f6,
+                errors        = findings_for_llm,
+                tx_type       = tx_type,
+                system_prompt = LLM_CORRECTION_SYSTEM_PROMPT,
+                user_prompt   = correction_user_prompt,
+            )
+
+        safe_dicts = unmask_llm_output([d.__dict__ for d in raw_decisions], mask_map)
+        all_decisions = [
+            LLMDecision(**{k: v for k, v in d.items() if k in LLMDecision.__dataclass_fields__})
+            for d in safe_dicts
+        ]
+
+    except Exception as exc:
+        yield _step("llm_correct", "LLM Correction", "error", str(exc)[:120])
+        yield _emit("error", {"message": f"LLM correction failed: {exc}"})
+        return
+
+    resolved     = [d for d in all_decisions if d.action != "UNRESOLVABLE"]
+    unresolvable = [
+        {"field_id": d.field_id, "finding_code": d.finding_code, "reason": d.reasoning}
+        for d in all_decisions if d.action == "UNRESOLVABLE"
+    ]
+    yield _step("llm_correct", "LLM Correction", "complete",
+                f"{len(resolved)} corrected · {len(unresolvable)} unresolvable")
+
+    # ── Step 4: Merge corrections ─────────────────────────────────────────────
+    from engine.llm_merger import merge_llm_decisions
+    corrected_f6, correction_entries, llm_summary = merge_llm_decisions(f6_text, resolved)
+
+    # ── Step 5: Re-validate ───────────────────────────────────────────────────
+    yield _step("revalidate", "Re-validating", "running")
+    try:
+        tx2       = await _asyncio.to_thread(parse_f6, corrected_f6)
+        tx_type2  = _detect(tx2)
+        report2   = await _asyncio.to_thread(validator.validate, tx2, tx_type2, rs_id)
+    except Exception as exc:
+        yield _step("revalidate", "Re-validating", "error", str(exc))
+        yield _emit("error", {"message": f"Re-validation failed: {exc}"})
+        return
+
+    post_score    = report2.summary["score"]
+    errors_post   = [c for c in report2.checks if c.status == "ERROR"]
+
+    if not resolved:
+        # LLM was called but made no corrections (e.g. only warnings, all UNRESOLVABLE)
+        status = "VALID" if not errors_post else "UNCORRECTABLE"
+    elif not errors_post:
+        status = "CORRECTED"
+    elif len(errors_post) < len(errors_pre):
+        status = "PARTIALLY_CORRECTED"
+    else:
+        status = "UNCORRECTABLE"
+
+    yield _step("revalidate", "Re-validating", "complete",
+                f"Score {pre_score} → {post_score}")
+
+    corrections = [
+        {
+            "field_id":        d.field_id,
+            "field_name":      d.field_name,
+            "segment":         d.segment_id,
+            "original_value":  d.original_value,
+            "corrected_value": d.resolved_value,
+            "reasoning":       d.reasoning,
+            "confidence":      d.confidence,
+            "action":          d.action,
         }
+        for d in resolved
+    ]
 
-    except Exception as e:
-        db_ops.fail_conversion(cid, str(e))
-        raise HTTPException(500, f"Reverse conversion failed: {e}")
+    unchanged_entries = [
+        {
+            "segment":       c.segment or "",
+            "occurrence":    1,
+            "from_field_id": c.field_id,
+            "to_field_id":   c.field_id,
+            "field_name":    c.field_name or c.field_id,
+            "change_type":   "carried",
+            "old_value":     c.actual or "",
+            "new_value":     c.actual or "",
+            "rule_applied":  "PASS",
+            "notes":         c.message or "Field is valid",
+            "condition_evaluated": False,
+            "condition_passed": True,
+            "condition_expression": "",
+        }
+        for c in report2.checks if c.status == "PASS" and c.field_id
+    ]
+
+    audit_summary = {
+        'corrected': llm_summary.get('modified', 0),
+        'filled':     0,
+        "formatted":    0,
+        "unchanged":    len(unchanged_entries),
+        "unresolvable": len(unresolvable),
+    }
+
+    yield _emit("result", {
+        "f6_output":        corrected_f6,
+        "status":           status,
+        "corrections":      corrections,
+        "unresolvable":     unresolvable,
+        "pre_score":        pre_score,
+        "post_score":       post_score,
+        "transaction_type": tx_type,
+        "audit": {
+            "entries": correction_entries + unchanged_entries,
+            "summary": audit_summary,
+        },
+    })
 
 
-# ── F6 → D.0 Batch Upload ─────────────────────────────────────────────────────
+@app.post("/api/correct/stream")
+async def correct_f6_stream(req: CorrectRequest):
+    """SSE endpoint: validate an F6 transaction and use LLM to correct findings in-place."""
+    if not req.f6_text.strip():
+        raise HTTPException(400, "f6_text must not be empty.")
+    return StreamingResponse(
+        _stream_f6_correction(req.f6_text, req.filename or "manual_input_f6"),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive",
+                 "X-Accel-Buffering": "no"},
+    )
 
-@app.post("/api/reverse-batch")
-async def reverse_batch_upload(
-    files: list[UploadFile] = File(...),
-):
-    """Upload multiple F6 files for reverse conversion. All jobs queued in parallel."""
-    if not files:
-        raise HTTPException(400, "No files uploaded.")
-    if len(files) > 500:
-        raise HTTPException(400, "Maximum 500 files per batch.")
 
-    batch_name = f'f6_to_d0_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}'
-    batch_id   = db_ops.create_batch(name=batch_name, total_files=len(files))
+@app.post("/api/correct")
+async def correct_f6(req: CorrectRequest):
+    """Non-streaming F6 correction. Returns corrected F6 + audit when complete."""
+    if not req.f6_text.strip():
+        raise HTTPException(400, "f6_text must not be empty.")
 
-    pool = get_pool()
+    collected: dict = {}
+    async for chunk in _stream_f6_correction(req.f6_text, req.filename or "manual_input_f6"):
+        if not chunk.startswith("data: "):
+            continue
+        try:
+            event = json.loads(chunk[6:])
+            if event.get("type") == "result":
+                collected = event["data"]
+            elif event.get("type") == "error":
+                raise HTTPException(500, event["data"].get("message", "Correction failed"))
+        except json.JSONDecodeError:
+            pass
 
-    for f in files:
-        content = await f.read()
-        text    = content.decode("latin-1", errors="replace")
-        cid     = db_ops.create_conversion(
-            filename  = f.filename or "unknown_f6.txt",
-            d0_input  = '',
-            batch_id  = batch_id,
-            direction = 'F6_TO_D0',
-            input_text= text,
-        )
-        job = make_job(
-            conversion_id = cid,
-            input_text    = text,
-            direction     = 'F6_TO_D0',
-            batch_id      = batch_id,
-            priority      = Priority.BULK,
-            timeout       = 60.0,
-        )
-        await pool.submit(job)
-
-    return {"batch_id": batch_id, "total_files": len(files), "status": "processing"}
+    if not collected:
+        raise HTTPException(500, "Correction produced no result")
+    return collected
 
 
 # ── Engine (Agent Pool) ───────────────────────────────────────────────────────

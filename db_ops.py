@@ -35,7 +35,7 @@ def create_conversion(
         conn.execute("""
             INSERT INTO conversions
                 (id, batch_id, filename, d0_input, input_text, direction, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)
         """, (cid, batch_id, filename, d0_input, input_text or d0_input, direction, _now()))
     return cid
 
@@ -43,7 +43,7 @@ def create_conversion(
 def mark_conversion_processing(conversion_id: str):
     with db() as conn:
         conn.execute(
-            "UPDATE conversions SET status='processing' WHERE id=?",
+            "UPDATE conversions SET status='processing' WHERE id=%s",
             (conversion_id,),
         )
 
@@ -74,7 +74,7 @@ def complete_conversion(
                 errors_count       = ?,
                 rule_set_version   = ?,
                 completed_at       = ?
-            WHERE id = ?
+            WHERE id = %s
         """, (
             transaction_type, f6_output, d0_output,
             summary.get('added', 0),       summary.get('carried', 0),
@@ -91,16 +91,16 @@ def fail_conversion(conversion_id: str, error_message: str):
         conn.execute("""
             UPDATE conversions SET
                 status        = 'failed',
-                error_message = ?,
-                completed_at  = ?
-            WHERE id = ?
+                error_message = %s,
+                completed_at  = %s
+            WHERE id = %s
         """, (error_message, _now(), conversion_id))
 
 
 def get_conversion(conversion_id: str) -> Optional[dict]:
     with db() as conn:
         row = conn.execute(
-            "SELECT * FROM conversions WHERE id=?", (conversion_id,)
+            "SELECT * FROM conversions WHERE id=%s", (conversion_id,)
         ).fetchone()
         return dict(row) if row else None
 
@@ -113,16 +113,16 @@ def list_conversions(
 ) -> list[dict]:
     clauses, params = [], []
     if status:
-        clauses.append("status = ?")
+        clauses.append("status = %s")
         params.append(status)
     if batch_id:
-        clauses.append("batch_id = ?")
+        clauses.append("batch_id = %s")
         params.append(batch_id)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     params += [limit, offset]
     with db() as conn:
         rows = conn.execute(
-            f"SELECT * FROM conversions {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM conversions {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params,
         ).fetchall()
         return [dict(r) for r in rows]
@@ -132,9 +132,9 @@ def count_conversions(status: Optional[str] = None) -> int:
     with db() as conn:
         if status:
             return conn.execute(
-                "SELECT COUNT(*) FROM conversions WHERE status=?", (status,)
-            ).fetchone()[0]
-        return conn.execute("SELECT COUNT(*) FROM conversions").fetchone()[0]
+                "SELECT COUNT(*) AS count FROM conversions WHERE status=%s", (status,)
+            ).fetchone()['count']
+        return conn.execute("SELECT COUNT(*) AS count FROM conversions").fetchone()['count']
 
 
 # ── Audit Entries ─────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ def insert_audit_entries(conversion_id: str, entries: list[dict]):
                 change_type, old_value, new_value,
                 rule_applied, notes,
                 condition_evaluated, condition_passed, condition_expression
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             (
                 conversion_id,
@@ -173,17 +173,17 @@ def get_audit_entries(
     change_type: Optional[str] = None,
     search: Optional[str] = None,
 ) -> list[dict]:
-    clauses = ["conversion_id = ?"]
+    clauses = ["conversion_id = %s"]
     params: list = [conversion_id]
     if segment:
-        clauses.append("segment = ?")
+        clauses.append("segment = %s")
         params.append(segment)
     if change_type:
-        clauses.append("change_type = ?")
+        clauses.append("change_type = %s")
         params.append(change_type)
     if search:
         clauses.append(
-            "(field_name LIKE ? OR from_field_id LIKE ? OR old_value LIKE ? OR new_value LIKE ?)"
+            "(field_name LIKE %s OR from_field_id LIKE %s OR old_value LIKE %s OR new_value LIKE %s)"
         )
         s = f'%{search}%'
         params += [s, s, s, s]
@@ -204,7 +204,7 @@ def insert_audit_findings(conversion_id: str, findings: list[dict]):
         conn.executemany("""
             INSERT INTO audit_findings
                 (conversion_id, severity, code, message, segment, field_id, occurrence)
-            VALUES (?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, [
             (
                 conversion_id,
@@ -219,7 +219,7 @@ def insert_audit_findings(conversion_id: str, findings: list[dict]):
 def get_audit_findings(conversion_id: str) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM audit_findings WHERE conversion_id=? ORDER BY severity DESC, id ASC",
+            "SELECT * FROM audit_findings WHERE conversion_id=%s ORDER BY severity DESC, id ASC",
             (conversion_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -234,7 +234,7 @@ def insert_agent_steps(conversion_id: str, steps: list[dict]):
         conn.executemany("""
             INSERT INTO agent_steps
                 (conversion_id, step_order, step_id, label, status, detail)
-            VALUES (?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s)
         """, [
             (
                 conversion_id, i,
@@ -254,18 +254,18 @@ def upsert_agent_step(conversion_id: str, step: dict) -> None:
     """
     with db() as conn:
         existing = conn.execute(
-            "SELECT id FROM agent_steps WHERE conversion_id=? AND step_id=?",
+            "SELECT id FROM agent_steps WHERE conversion_id=%s AND step_id=%s",
             (conversion_id, step['id']),
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE agent_steps SET status=?, detail=? WHERE id=?",
+                "UPDATE agent_steps SET status=%s, detail=%s WHERE id=%s",
                 (step.get('status', 'complete'), step.get('detail', ''), existing['id']),
             )
         else:
             conn.execute(
                 "INSERT INTO agent_steps (conversion_id, step_order, step_id, label, status, detail) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     conversion_id,
                     step.get('step_order', 0),
@@ -280,7 +280,7 @@ def upsert_agent_step(conversion_id: str, step: dict) -> None:
 def get_agent_steps(conversion_id: str) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM agent_steps WHERE conversion_id=? ORDER BY step_order ASC",
+            "SELECT * FROM agent_steps WHERE conversion_id=%s ORDER BY step_order ASC",
             (conversion_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -293,7 +293,7 @@ def create_batch(name: str, total_files: int) -> str:
     with db() as conn:
         conn.execute("""
             INSERT INTO batches (id, name, total_files, status, created_at)
-            VALUES (?, ?, ?, 'pending', ?)
+            VALUES (%s, %s, %s, 'pending', %s)
         """, (bid, name, total_files, _now()))
     return bid
 
@@ -306,7 +306,7 @@ def update_batch_progress(batch_id: str):
                 COUNT(*) as total,
                 SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN status='failed'  THEN 1 ELSE 0 END) as failed
-            FROM conversions WHERE batch_id=?
+            FROM conversions WHERE batch_id=%s
         """, (batch_id,)).fetchone()
 
         total     = row['total']     or 0
@@ -328,17 +328,17 @@ def update_batch_progress(batch_id: str):
         completed_at = _now() if done == total else None
         conn.execute("""
             UPDATE batches SET
-                status          = ?,
-                completed_files = ?,
-                failed_files    = ?,
-                completed_at    = COALESCE(completed_at, ?)
-            WHERE id = ?
+                status          = %s,
+                completed_files = %s,
+                failed_files    = %s,
+                completed_at    = COALESCE(completed_at, %s)
+            WHERE id = %s
         """, (status, completed, failed, completed_at, batch_id))
 
 
 def get_batch(batch_id: str) -> Optional[dict]:
     with db() as conn:
-        row = conn.execute("SELECT * FROM batches WHERE id=?", (batch_id,)).fetchone()
+        row = conn.execute("SELECT * FROM batches WHERE id=%s", (batch_id,)).fetchone()
         return dict(row) if row else None
 
 
@@ -381,7 +381,7 @@ def create_rule_set(
         conn.execute("""
             INSERT INTO rule_sets
                 (id, name, description, version, source_pdf, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, 0, %s, %s)
         """, (rsid, name, description, version, source_pdf, t, t))
     return rsid
 
@@ -389,7 +389,7 @@ def create_rule_set(
 def activate_rule_set(rule_set_id: str):
     with db() as conn:
         conn.execute("UPDATE rule_sets SET is_active=0")
-        conn.execute("UPDATE rule_sets SET is_active=1 WHERE id=?", (rule_set_id,))
+        conn.execute("UPDATE rule_sets SET is_active=1 WHERE id=%s", (rule_set_id,))
 
 
 # ── Rules ─────────────────────────────────────────────────────────────────────
@@ -421,10 +421,10 @@ def insert_rules_bulk(rule_set_id: str, rules: list[dict]):
                 field_id, field_name, action, rule_json,
                 mandatory_f6, warn_if_empty, warn_code, warn_severity,
                 notes, created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, rows)
         conn.execute(
-            "UPDATE rule_sets SET total_rules=?, updated_at=? WHERE id=?",
+            "UPDATE rule_sets SET total_rules=%s, updated_at=%s WHERE id=%s",
             (len(rows), t, rule_set_id),
         )
 
@@ -435,16 +435,16 @@ def list_rules(
     segment_id: Optional[str] = None,
     search: Optional[str] = None,
 ) -> list[dict]:
-    clauses = ["rule_set_id = ?"]
+    clauses = ["rule_set_id = %s"]
     params: list = [rule_set_id]
     if transaction_type:
-        clauses.append("transaction_type = ?")
+        clauses.append("transaction_type = %s")
         params.append(transaction_type)
     if segment_id:
-        clauses.append("segment_id = ?")
+        clauses.append("segment_id = %s")
         params.append(segment_id)
     if search:
-        clauses.append("(field_id LIKE ? OR field_name LIKE ?)")
+        clauses.append("(field_id LIKE %s OR field_name LIKE %s)")
         s = f'%{search}%'
         params += [s, s]
     where = "WHERE " + " AND ".join(clauses)
@@ -460,16 +460,16 @@ def update_rule(rule_id: str, rule_data: dict):
     with db() as conn:
         conn.execute("""
             UPDATE rules SET
-                field_name    = ?,
-                action        = ?,
-                rule_json     = ?,
-                mandatory_f6  = ?,
-                warn_if_empty = ?,
-                warn_code     = ?,
-                warn_severity = ?,
-                notes         = ?,
-                updated_at    = ?
-            WHERE id = ?
+                field_name    = %s,
+                action        = %s,
+                rule_json     = %s,
+                mandatory_f6  = %s,
+                warn_if_empty = %s,
+                warn_code     = %s,
+                warn_severity = %s,
+                notes         = %s,
+                updated_at    = %s
+            WHERE id = %s
         """, (
             rule_data.get('field_name', ''),
             rule_data.get('action', 'carry'),
@@ -486,7 +486,7 @@ def update_rule(rule_id: str, rule_data: dict):
 
 def delete_rule(rule_id: str):
     with db() as conn:
-        conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
+        conn.execute("DELETE FROM rules WHERE id=%s", (rule_id,))
 
 
 # ── Validations ──────────────────────────────────────────────────────────────
@@ -508,7 +508,7 @@ def save_validation(
                 score, total_checks, passed, warnings, errors,
                 rule_set_id, categories_json, checks_json, parse_errors_json,
                 created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             vid, transaction_type, overall_status,
             summary.get('score', 0),
@@ -528,7 +528,7 @@ def save_validation(
 def get_validation(validation_id: str) -> Optional[dict]:
     with db() as conn:
         row = conn.execute(
-            "SELECT * FROM validations WHERE id=?", (validation_id,)
+            "SELECT * FROM validations WHERE id=%s", (validation_id,)
         ).fetchone()
         if not row:
             return None
@@ -546,7 +546,7 @@ def list_validations(
 ) -> list[dict]:
     clauses, params = [], []
     if status:
-        clauses.append("overall_status = ?")
+        clauses.append("overall_status = %s")
         params.append(status)
     where   = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     params += [limit, offset]
@@ -554,7 +554,7 @@ def list_validations(
         rows = conn.execute(
             f"SELECT id, transaction_type, overall_status, score, total_checks, "
             f"passed, warnings, errors, rule_set_id, created_at "
-            f"FROM validations {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"FROM validations {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params,
         ).fetchall()
         return [dict(r) for r in rows]
@@ -564,9 +564,9 @@ def count_validations(status: Optional[str] = None) -> int:
     with db() as conn:
         if status:
             return conn.execute(
-                "SELECT COUNT(*) FROM validations WHERE overall_status=?", (status,)
-            ).fetchone()[0]
-        return conn.execute("SELECT COUNT(*) FROM validations").fetchone()[0]
+                "SELECT COUNT(*) AS count FROM validations WHERE overall_status=%s", (status,)
+            ).fetchone()['count']
+        return conn.execute("SELECT COUNT(*) AS count FROM validations").fetchone()['count']
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -577,16 +577,16 @@ def get_db_stats() -> dict:
             "SELECT name FROM rule_sets WHERE is_active=1"
         ).fetchone()
         total_rules = conn.execute("""
-            SELECT COUNT(*) FROM rules WHERE rule_set_id=(
+            SELECT COUNT(*) AS count FROM rules WHERE rule_set_id=(
                 SELECT id FROM rule_sets WHERE is_active=1
             )
-        """).fetchone()[0]
+        """).fetchone()['count']
         return {
-            'total_conversions': conn.execute("SELECT COUNT(*) FROM conversions").fetchone()[0],
-            'successful':        conn.execute("SELECT COUNT(*) FROM conversions WHERE status='success'").fetchone()[0],
-            'failed':            conn.execute("SELECT COUNT(*) FROM conversions WHERE status='failed'").fetchone()[0],
-            'processing':        conn.execute("SELECT COUNT(*) FROM conversions WHERE status='processing'").fetchone()[0],
-            'total_batches':     conn.execute("SELECT COUNT(*) FROM batches").fetchone()[0],
+            'total_conversions': conn.execute("SELECT COUNT(*) AS count FROM conversions").fetchone()['count'],
+            'successful':        conn.execute("SELECT COUNT(*) AS count FROM conversions WHERE status='success'").fetchone()['count'],
+            'failed':            conn.execute("SELECT COUNT(*) AS count FROM conversions WHERE status='failed'").fetchone()['count'],
+            'processing':        conn.execute("SELECT COUNT(*) AS count FROM conversions WHERE status='processing'").fetchone()['count'],
+            'total_batches':     conn.execute("SELECT COUNT(*) AS count FROM batches").fetchone()['count'],
             'total_rules':       total_rules,
             'active_rule_set':   rs_row['name'] if rs_row else None,
         }
@@ -622,7 +622,7 @@ def insert_llm_decisions(
                 resolved_value, original_value, reasoning,
                 confidence, finding_code, action,
                 llm_model, phi_was_masked, was_overridden
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             (
                 conversion_id,
@@ -638,7 +638,7 @@ def insert_llm_decisions(
 def get_llm_decisions(conversion_id: str) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM llm_decisions WHERE conversion_id=? ORDER BY id ASC",
+            "SELECT * FROM llm_decisions WHERE conversion_id=%s ORDER BY id ASC",
             (conversion_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -646,25 +646,25 @@ def get_llm_decisions(conversion_id: str) -> list[dict]:
 
 def get_llm_stats() -> dict:
     with db() as conn:
-        total   = conn.execute("SELECT COUNT(*) FROM llm_decisions").fetchone()[0]
+        total    = conn.execute("SELECT COUNT(*) AS count FROM llm_decisions").fetchone()['count']
         resolved = conn.execute(
-            "SELECT COUNT(*) FROM llm_decisions WHERE action='RESOLVED'"
-        ).fetchone()[0]
-        unres   = conn.execute(
-            "SELECT COUNT(*) FROM llm_decisions WHERE action='UNRESOLVABLE'"
-        ).fetchone()[0]
-        high    = conn.execute(
-            "SELECT COUNT(*) FROM llm_decisions WHERE confidence='HIGH'"
-        ).fetchone()[0]
-        medium  = conn.execute(
-            "SELECT COUNT(*) FROM llm_decisions WHERE confidence='MEDIUM'"
-        ).fetchone()[0]
-        low     = conn.execute(
-            "SELECT COUNT(*) FROM llm_decisions WHERE confidence='LOW'"
-        ).fetchone()[0]
-        convs   = conn.execute(
-            "SELECT COUNT(DISTINCT conversion_id) FROM llm_decisions"
-        ).fetchone()[0]
+            "SELECT COUNT(*) AS count FROM llm_decisions WHERE action='RESOLVED'"
+        ).fetchone()['count']
+        unres    = conn.execute(
+            "SELECT COUNT(*) AS count FROM llm_decisions WHERE action='UNRESOLVABLE'"
+        ).fetchone()['count']
+        high     = conn.execute(
+            "SELECT COUNT(*) AS count FROM llm_decisions WHERE confidence='HIGH'"
+        ).fetchone()['count']
+        medium   = conn.execute(
+            "SELECT COUNT(*) AS count FROM llm_decisions WHERE confidence='MEDIUM'"
+        ).fetchone()['count']
+        low      = conn.execute(
+            "SELECT COUNT(*) AS count FROM llm_decisions WHERE confidence='LOW'"
+        ).fetchone()['count']
+        convs    = conn.execute(
+            "SELECT COUNT(DISTINCT conversion_id) AS count FROM llm_decisions"
+        ).fetchone()['count']
     return {
         "total_decisions":          total,
         "resolved":                 resolved,

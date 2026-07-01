@@ -72,8 +72,12 @@ def merge_llm_decisions(
         else:
             unresolvable_count += 1
 
+    actually_resolved = sum(
+    1 for d in decisions
+    if d.resolved_value and d.action != "UNRESOLVABLE"
+    )
     summary_delta = {
-        "modified": resolved_count,
+        "modified": actually_resolved,
         "errors":   max(0, unresolvable_count),
     }
 

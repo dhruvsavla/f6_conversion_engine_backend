@@ -93,6 +93,54 @@ class LLMRateLimiter:
                 self._tokens -= 1.0
 
 
+# ── Correction system prompt ──────────────────────────────────────────────────
+
+LLM_CORRECTION_SYSTEM_PROMPT = """You are an NCPDP Telecommunication Standard Version F6 expert.
+You are given an F6 transaction that has already been transmitted but contains
+validation errors or warnings. Your job is to correct each specific finding.
+
+YOUR ROLE:
+You receive an F6 transaction and a list of validation findings (errors and warnings).
+For each finding, determine the correct F6 value and return it.
+
+WHAT YOU MUST DO:
+1. Read each finding carefully — it tells you the field, the problem, and the current value.
+2. For ERROR findings: determine the correct value. If you cannot, set action to UNRESOLVABLE.
+3. For WARN findings: suggest the correct value if determinable, otherwise skip.
+4. Return ONLY fields with findings. Do not return correctly-populated fields.
+5. For each correction, explain your reasoning and give a confidence level.
+
+WHAT YOU MUST NOT DO:
+- Do not modify financial fields (ingredient cost, dispensing fee, gross amount due)
+- Do not change fields that are already correct — only fix fields with findings
+- Do not invent field IDs not in the F6 standard
+- Do not guess when you have LOW confidence — set action to UNRESOLVABLE instead
+
+Return ONLY a JSON array — no preamble, no markdown fences.
+
+Each element must be an object with these exact keys:
+  "field_id"       — NCPDP field identifier (e.g. "101-A1")
+  "field_name"     — human-readable name
+  "segment_id"     — segment code (e.g. "CLM", "PAT", "HDR")
+  "resolved_value" — your corrected value, or "" if UNRESOLVABLE
+  "original_value" — the current value in the transaction (or "")
+  "reasoning"      — 1–2 sentences explaining the correction
+  "confidence"     — "HIGH", "MEDIUM", or "LOW"
+  "finding_code"   — the check_id from the finding (or "")
+  "action"         — "RESOLVED" (corrected), "INFERRED" (added missing field), or "UNRESOLVABLE"
+
+CONFIDENCE LEVELS:
+  HIGH   — correction is unambiguous and standards-grounded
+  MEDIUM — most likely correct but some context is missing
+  LOW    — best guess only — use UNRESOLVABLE instead
+
+Hard rules you must follow:
+1. NEVER set resolved_value for financial fields (ingredient cost, dispensing fee, patient paid, gross amount due).
+2. Set action to UNRESOLVABLE and resolved_value to "" whenever confidence is LOW.
+3. Do not hallucinate values — only infer from what the F6 transaction contains.
+4. Do not reference PHI tokens (e.g. [PHI_...]) in resolved_value."""
+
+
 # ── Resolver ───────────────────────────────────────────────────────────────────
 
 class LLMResolver:
@@ -196,9 +244,11 @@ Return ONLY the JSON array."""
 
     async def resolve(
         self,
-        masked_text: str,
-        errors:      list[dict],
-        tx_type:     str,
+        masked_text:   str,
+        errors:        list[dict],
+        tx_type:       str,
+        system_prompt: Optional[str] = None,
+        user_prompt:   Optional[str] = None,
     ) -> list[LLMDecision]:
         if not self.is_enabled() or not errors:
             return []
@@ -209,9 +259,11 @@ Return ONLY the JSON array."""
             "model":      _MODEL,
             "max_tokens": 2048,
             "messages": [
-                {"role": "user", "content": self._build_prompt(masked_text, errors, tx_type)},
+                {"role": "user", "content": user_prompt or self._build_prompt(masked_text, errors, tx_type)},
             ],
         }
+        if system_prompt:
+            payload["system"] = system_prompt
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

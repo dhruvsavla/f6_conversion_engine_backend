@@ -1,0 +1,21 @@
+databases:
+  - name: f6-conversion-engine-db
+    plan: free               # 90-day free trial; $7/month (1 GB) after that
+
+services:
+  - type: web
+    name: f6-conversion-engine-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: f6-conversion-engine-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false          # set this in Render dashboard — never commit the value
+      - key: ALLOWED_ORIGINS
+        sync: false          # set to your Vercel URL after frontend deploys
