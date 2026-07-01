@@ -61,19 +61,19 @@ def complete_conversion(
         conn.execute("""
             UPDATE conversions SET
                 status             = 'success',
-                transaction_type   = ?,
-                f6_output          = ?,
-                d0_output          = ?,
-                fields_added       = ?,
-                fields_carried     = ?,
-                fields_transformed = ?,
-                fields_removed     = ?,
-                fields_modified    = ?,
-                fields_missing     = ?,
-                warnings_count     = ?,
-                errors_count       = ?,
-                rule_set_version   = ?,
-                completed_at       = ?
+                transaction_type   = %s,
+                f6_output          = %s,
+                d0_output          = %s,
+                fields_added       = %s,
+                fields_carried     = %s,
+                fields_transformed = %s,
+                fields_removed     = %s,
+                fields_modified    = %s,
+                fields_missing     = %s,
+                warnings_count     = %s,
+                errors_count       = %s,
+                rule_set_version   = %s,
+                completed_at       = %s
             WHERE id = %s
         """, (
             transaction_type, f6_output, d0_output,

@@ -1441,9 +1441,9 @@ def _existing_rule_set_id() -> str | None:
     """Return the existing rule set ID if it already exists, else None."""
     with db() as conn:
         row = conn.execute(
-            "SELECT id FROM rule_sets WHERE name=?", (RULE_SET_NAME,)
+            "SELECT id FROM rule_sets WHERE name=%s", (RULE_SET_NAME,)
         ).fetchone()
-        return row[0] if row else None
+        return row['id'] if row else None
 
 
 def seed(activate: bool = True, force: bool = False) -> str:
@@ -1468,8 +1468,8 @@ def seed(activate: bool = True, force: bool = False) -> str:
 
     if existing_id and force:
         with db() as conn:
-            conn.execute("DELETE FROM rules WHERE rule_set_id=?", (existing_id,))
-            conn.execute("DELETE FROM rule_sets WHERE id=?", (existing_id,))
+            conn.execute("DELETE FROM rules WHERE rule_set_id=%s", (existing_id,))
+            conn.execute("DELETE FROM rule_sets WHERE id=%s", (existing_id,))
         print(f"[SEEDER] Deleted existing rule set {existing_id} (--force).")
 
     rsid = db_ops.create_rule_set(
